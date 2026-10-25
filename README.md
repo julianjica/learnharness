@@ -15,6 +15,8 @@
   <a href="https://github.com/amosblomqvist/learnharness/issues">Issues</a>
 </p>
 
+> **This is a fork.** Besides API keys, it can run every agent on a **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro/Team/Edu) subscription through the Claude Code or Codex CLI you already have signed in. See [Use a Claude or ChatGPT plan instead of API keys](#use-a-claude-or-chatgpt-plan-instead-of-api-keys). It is for personal use only.
+
 LearnHarness uses AI agents to plan and teach lessons from your current understanding to your goal. It builds a detailed picture of what you understand and how you reason. That picture is updated as you learn.
 
 Instead of just giving you an explanation, it uses your answers and thinking to decide what you need next. Teaching builds understanding one reasoning step at a time. Practice makes it usable. A persistent knowledge graph carries it across sessions.
@@ -59,11 +61,66 @@ All three platforms support in-app updates.
 - **External services.** Models run through your configured providers. Model requests send the context needed for the task; web research and dictation also contact external services. Local storage does not mean offline processing.
 - **Inspectable behavior.** System prompts are visible and editable. The app is open source under the AGPL-3.0 license.
 
-## Fork note: Claude Code engine
+## Use a Claude or ChatGPT plan instead of API keys
 
-This fork can run any agent through a locally installed, signed-in **Claude Code** (provider `claude-code` in Settings → Models), so a Claude subscription pays for the run instead of an API key. It is for personal use only, because Anthropic's terms don't allow apps to offer claude.ai login to other users. See [docs/claude-code-engine.md](docs/claude-code-engine.md).
+Upstream LearnHarness bills every model call to a provider API key. This fork adds two extra **engines** that run the agents through a coding CLI installed on your machine. The run is then billed to whatever plan that CLI is signed in with, and you need no API key for them.
 
-It can do the same with a locally installed, signed-in **Codex CLI** (provider `codex`), so a ChatGPT subscription pays for the run. It is also for personal use only. See [docs/codex-engine.md](docs/codex-engine.md).
+| Provider in Settings → Models | Runs through | Paid by | Models offered |
+|---|---|---|---|
+| `claude-code` | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) | Your Claude Pro / Max plan | Claude Opus, Sonnet, Haiku |
+| `codex` | [Codex CLI](https://github.com/openai/codex) (`codex app-server`) | Your ChatGPT Plus / Pro / Team / Edu plan | GPT-5.6 / GPT-6 Codex models |
+
+Everything else stays the same: the teaching method, the plan tree, the knowledge graph, practice and local storage. pi (the normal API-key engine) is still the default, and you can mix engines per slot.
+
+> **Personal use only.** Anthropic's terms don't allow apps to offer claude.ai sign-in to other users, and the same caution applies to ChatGPT plans. Run this fork for yourself. Don't distribute builds with these engines enabled.
+
+### Requirements
+
+- **Run from source.** The downloads on learnharness.ai are upstream builds and don't include these engines. You need Node.js and `npm` to run this fork (see [Development and support](#development-and-support)).
+- **The CLI installed and signed in**, for each plan you want to use:
+  - **Claude:** install Claude Code, run `claude` once and sign in with `/login`.
+  - **ChatGPT:** install the Codex CLI and run `codex login`. If you store credentials in the system keychain, `codex login status` can still say "Not logged in" even though Codex is signed in. The first turn in LearnHarness tells you either way.
+- **A plan with room in it.** Runs count against your plan's normal usage limits, including background work.
+
+### Setup
+
+```bash
+git clone https://github.com/julianjica/learnharness.git
+cd learnharness
+git checkout codex-engine     # the branch with both engines
+npm install
+npm run dev                   # open http://localhost:3000
+```
+
+1. Open **Settings → Models**.
+2. For each slot (**strong**, **cheap**, **vision**), choose a model under `claude-code` or `codex`. For example, `claude-code · claude-opus-5-5` for strong and `claude-code · claude-haiku-5-5` for cheap. A provider is listed only when its CLI is found.
+3. Start a session as usual. You can also override the model for a single session.
+
+You can mix freely: Claude for teaching and Codex for background jobs, or a plan for some slots and an API key for others.
+
+### What changes when you use a plan
+
+- **Cost meter:** plan runs show **$0**. The subscription pays, and LearnHarness doesn't estimate plan costs. Token counts are still recorded.
+- **Thinking level:** it maps to the CLI's reasoning effort (low → max). On Codex, "off" means its lowest effort.
+- **Speed:** each turn starts a CLI process, which adds about 1–3 s.
+- **History:** each chat keeps its own Claude Code session or Codex thread, so later turns send only what's new. These sessions run in `data/claude-code/` and `data/codex/` and stay out of your own project history.
+- **No extra powers:** the CLIs' own tools (shell, file editing, web search, MCP servers, plugins) are switched off. The agents use only LearnHarness's tools.
+- **Other services:** web search and dictation still use their own service keys, if you want them.
+- **Errors:** if the CLI is signed out or a rate limit is hit, the turn shows the CLI's own error message.
+
+### Options (environment variables)
+
+| Variable | Effect |
+|---|---|
+| `LH_CLAUDE_CODE_PATH` / `LH_CODEX_PATH` | Use this executable instead of searching PATH and the usual install locations. |
+| `LH_CLAUDE_CODE=0\|1` / `LH_CODEX=0\|1` | Hide or force-show the provider. |
+| `LH_CLAUDE_CODE_USE_API_KEY=1` / `LH_CODEX_USE_API_KEY=1` | Let the CLI see an `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` saved in LearnHarness. By default these are hidden from it, so the run is billed to your plan, not your key. |
+
+### Already on the official desktop app?
+
+The upstream desktop app has its own **ChatGPT** sign-in (provider `chatgpt`) that works without this fork. The `codex` engine here is the alternative for running from source, or if you'd rather reuse your Codex CLI login.
+
+Design notes and known limits: [docs/claude-code-engine.md](docs/claude-code-engine.md) and [docs/codex-engine.md](docs/codex-engine.md).
 
 ## Development and support
 
