@@ -23,6 +23,8 @@ import type { ChatGPTRequestCycle } from "./chatgpt-request-cycle.ts";
 import { usageWasAdmitted } from "./subscription-request-cycle.ts";
 import { ClaudeCodeAgent } from "./claude-code/agent.ts";
 import { isClaudeCodeProvider } from "./claude-code/catalog.ts";
+import { CodexAgent } from "./codex/agent.ts";
+import { isCodexProvider } from "./codex/catalog.ts";
 
 /**
  * The two teaching-side agents (docs/probe-teach-split.md): the PROBER and
@@ -186,8 +188,11 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	// Claude Code engine (docs/claude-code-engine.md): same prompt, tools,
 	// transcript and question-stop rule; Claude Code runs the loop. The
 	// session resumes per chat (the ledger in claude-code/sessions.ts).
-	if (isClaudeCodeProvider(engine.model.provider)) {
-		const agent = new ClaudeCodeAgent({
+	// Codex (docs/codex-engine.md) is wired identically; its thread ledger
+	// lives in codex/sessions.ts.
+	const external = isClaudeCodeProvider(engine.model.provider) ? ClaudeCodeAgent : isCodexProvider(engine.model.provider) ? CodexAgent : undefined;
+	if (external) {
+		const agent = new external({
 			systemPrompt,
 			model: engine.model,
 			thinkingLevel: engine.level,

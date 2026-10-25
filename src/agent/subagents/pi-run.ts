@@ -7,6 +7,8 @@ import { providerEventObserver } from "../provider-events.ts";
 import type { ModelRole } from "../../../config.ts";
 import { ClaudeCodeAgent } from "../claude-code/agent.ts";
 import { isClaudeCodeProvider } from "../claude-code/catalog.ts";
+import { CodexAgent } from "../codex/agent.ts";
+import { isCodexProvider } from "../codex/catalog.ts";
 
 /**
  * The shared sub-agent runner (docs/pi-engine-swap.md §6): one helper every
@@ -69,9 +71,11 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 	const providerEvents = opts.chatId ? providerEventObserver(opts.chatId, `job:${opts.role}`) : undefined;
 	// Claude Code engine (docs/claude-code-engine.md, phase 2): a one-shot
 	// session per run (no chatId → never resumed, never persisted); the
-	// same turn cap and stop rule ride finishTurn.
-	const agent = isClaudeCodeProvider(engine.model.provider)
-		? new ClaudeCodeAgent({
+	// same turn cap and stop rule ride finishTurn. Codex (docs/codex-engine.md)
+	// runs the same way on one ephemeral thread.
+	const external = isClaudeCodeProvider(engine.model.provider) ? ClaudeCodeAgent : isCodexProvider(engine.model.provider) ? CodexAgent : undefined;
+	const agent = external
+		? new external({
 			systemPrompt: opts.systemPrompt,
 			model: engine.model,
 			thinkingLevel: engine.level,

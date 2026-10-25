@@ -19,6 +19,8 @@ import { nativeSubscriptionId, nativeSubscriptionModel } from "./subscription-br
 import { nativeSubscriptionStream } from "./subscription-stream.ts";
 import { claudeCodeModel, isClaudeCodeProvider } from "./claude-code/catalog.ts";
 import { claudeCodeStreamFn } from "./claude-code/stream.ts";
+import { codexModel, isCodexProvider } from "./codex/catalog.ts";
+import { codexStreamFn } from "./codex/stream.ts";
 
 /** App identity is immutable and shared by Models and every native Agent.
  * Agent's default Pi attribution otherwise overrides the Models identity. */
@@ -115,6 +117,14 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 			// sub-agents with their own loop do — one call, tools unexecuted.
 			streamFn: claudeCodeStreamFn(level),
 		};
+	}
+	// Codex (docs/codex-engine.md): the same routing — provider "codex"
+	// builds a CodexAgent; streamFn serves the own-loop sub-agents.
+	if (isCodexProvider(spec.provider)) {
+		const model = codexModel(spec.id);
+		if (!model) throw new Error(`codex catalog has no model ${spec.id}`);
+		const level = spec.thinkingLevel ? clampThinkingLevel(model, spec.thinkingLevel) : defaultThinkingLevel(model);
+		return { model, level, streamFn: codexStreamFn(level) };
 	}
 	const nativeId = nativeSubscriptionId(spec.provider);
 	const model = spec.provider === "chatgpt" ? chatGPTModel(spec.id) : nativeId ? nativeSubscriptionModel(spec.provider, spec.id) : models.getModel(spec.provider, spec.id);

@@ -24,6 +24,7 @@ import { chatGPTConnected, chatGPTModel, chatGPTModels, refreshChatGPTModels } f
 import { NATIVE_SUBSCRIPTIONS } from "../core/contracts/subscriptions.ts";
 import { nativeSubscriptionId, nativeSubscriptionConnected, nativeSubscriptionModel, nativeSubscriptionModels, refreshSubscriptionModels } from "../agent/subscription-bridge.ts";
 import { CLAUDE_CODE_PROVIDER, claudeCodeAvailable, claudeCodeModel, claudeCodeModels, isClaudeCodeProvider } from "../agent/claude-code/catalog.ts";
+import { CODEX_PROVIDER, codexAvailable, codexModel, codexModels, isCodexProvider } from "../agent/codex/catalog.ts";
 
 export async function refreshConnectionCatalog(provider?: string): Promise<void> {
 	await Promise.all([
@@ -32,9 +33,9 @@ export async function refreshConnectionCatalog(provider?: string): Promise<void>
 	]);
 }
 function connectionModel(provider: string, id: string): Model<Api> | undefined {
-	return provider === "chatgpt" ? chatGPTModel(id) : isClaudeCodeProvider(provider) ? claudeCodeModel(id) : nativeSubscriptionId(provider) ? nativeSubscriptionModel(provider, id) : piModels().getModel(provider, id);
+	return provider === "chatgpt" ? chatGPTModel(id) : isClaudeCodeProvider(provider) ? claudeCodeModel(id) : isCodexProvider(provider) ? codexModel(id) : nativeSubscriptionId(provider) ? nativeSubscriptionModel(provider, id) : piModels().getModel(provider, id);
 }
-function connectionProviderIds(): string[] { return [...piModels().getProviders().map((p) => p.id), "chatgpt", CLAUDE_CODE_PROVIDER, ...NATIVE_SUBSCRIPTIONS.map((p) => p.logicalId)]; }
+function connectionProviderIds(): string[] { return [...piModels().getProviders().map((p) => p.id), "chatgpt", CLAUDE_CODE_PROVIDER, CODEX_PROVIDER, ...NATIVE_SUBSCRIPTIONS.map((p) => p.logicalId)]; }
 import { settingsStore } from "../store/settings.ts";
 import { effectiveSettings } from "./stores.ts";
 import { keyValue } from "./keys.ts";
@@ -144,6 +145,8 @@ export function catalogProviders(): CatalogProvider[] {
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		// Claude Code: "present" = an executable was found; the CLI owns sign-in.
 		{ id: CLAUDE_CODE_PROVIDER, envVar: "", keyPresent: claudeCodeAvailable() },
+		// Codex: "present" = an executable was found; the CLI owns sign-in.
+		{ id: CODEX_PROVIDER, envVar: "", keyPresent: codexAvailable() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
 	]).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -191,7 +194,7 @@ export function catalogContextLimits(): Map<string, number> {
 			index.set(`${provider.id}:${model.id}`, model.contextWindow);
 		}
 	}
-	for (const model of [...chatGPTModels(), ...claudeCodeModels(), ...nativeSubscriptionModels()]) index.set(`${model.provider}:${model.id}`, model.contextWindow);
+	for (const model of [...chatGPTModels(), ...claudeCodeModels(), ...codexModels(), ...nativeSubscriptionModels()]) index.set(`${model.provider}:${model.id}`, model.contextWindow);
 	return index;
 }
 
@@ -207,7 +210,7 @@ export function modelCatalog(): ModelCatalogResponse {
 		.flatMap((p) => piModels().getModels(p.id))
 		.map(toModelDto)
 		.sort((a, b) => (a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider)))
-		.concat([...chatGPTModels(), ...claudeCodeModels(), ...nativeSubscriptionModels()].map(toModelDto));
+		.concat([...chatGPTModels(), ...claudeCodeModels(), ...codexModels(), ...nativeSubscriptionModels()].map(toModelDto));
 	return {
 		models,
 		defaults: catalogDefaults(),

@@ -136,7 +136,7 @@ export function claudeCodeEnv(extra?: Record<string, string>): Record<string, st
 /** Record messages the persisted transcript will hold after this run:
  *  no seeded system message, no in-memory question placeholders
  *  (persistTurn drops them — the learner's answer takes their place). */
-function persistedView(messages: readonly AgentMessage[]): AgentMessage[] {
+export function persistedView(messages: readonly AgentMessage[]): AgentMessage[] {
 	return messages.filter((m) => {
 		const role = (m as { role?: string }).role;
 		if (role === "system") return false;
@@ -166,7 +166,7 @@ function userMessage(blocks: InputBlock[]): SDKUserMessage {
 	return { type: "user", message: { role: "user", content: blocks as never }, parent_tool_use_id: null } as SDKUserMessage;
 }
 
-function steerText(message: AgentMessage): string {
+export function steerText(message: AgentMessage): string {
 	return toLlmMessages([message])
 		.filter((m) => m.role === "user")
 		.map((m) => (typeof (m as { content: unknown }).content === "string" ? (m as { content: string }).content : ((m as { content: (TextContent | ImageContent)[] }).content.filter((p) => p.type === "text") as TextContent[]).map((p) => p.text).join("\n")))

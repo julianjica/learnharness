@@ -63,6 +63,8 @@ All three platforms support in-app updates.
 
 This fork can run any agent through a locally installed, signed-in **Claude Code** (provider `claude-code` in Settings → Models), so a Claude subscription pays for the run instead of an API key. It is for personal use only, because Anthropic's terms don't allow apps to offer claude.ai login to other users. See [docs/claude-code-engine.md](docs/claude-code-engine.md).
 
+It can do the same with a locally installed, signed-in **Codex CLI** (provider `codex`), so a ChatGPT subscription pays for the run. It is also for personal use only. See [docs/codex-engine.md](docs/codex-engine.md).
+
 ## Development and support
 
 ```bash
