@@ -59,6 +59,10 @@ All three platforms support in-app updates.
 - **External services.** Models run through your configured providers. Model requests send the context needed for the task; web research and dictation also contact external services. Local storage does not mean offline processing.
 - **Inspectable behavior.** System prompts are visible and editable. The app is open source under the AGPL-3.0 license.
 
+## Fork note: Claude Code engine
+
+This fork can run any agent through a locally installed, signed-in **Claude Code** (provider `claude-code` in Settings → Models), so a Claude subscription pays for the run instead of an API key. It is for personal use only, because Anthropic's terms don't allow apps to offer claude.ai login to other users. See [docs/claude-code-engine.md](docs/claude-code-engine.md).
+
 ## Development and support
 
 ```bash

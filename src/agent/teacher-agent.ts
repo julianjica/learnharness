@@ -21,6 +21,8 @@ import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
 import { toLlmMessages, nativeInputCause } from "../core/native-messages.ts";
 import type { ChatGPTRequestCycle } from "./chatgpt-request-cycle.ts";
 import { usageWasAdmitted } from "./subscription-request-cycle.ts";
+import { ClaudeCodeAgent } from "./claude-code/agent.ts";
+import { isClaudeCodeProvider } from "./claude-code/catalog.ts";
 
 /**
  * The two teaching-side agents (docs/probe-teach-split.md): the PROBER and
@@ -181,6 +183,26 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	// Debug recorder (owner, 2026-10-04): raw provider events when
 	// LH_PROVIDER_EVENTS=1 and the caller handed a chatId; undefined is
 	// the normal no-observer path (tests, env-off).
+	// Claude Code engine (docs/claude-code-engine.md): same prompt, tools,
+	// transcript and question-stop rule; Claude Code runs the loop. The
+	// session resumes per chat (the ledger in claude-code/sessions.ts).
+	if (isClaudeCodeProvider(engine.model.provider)) {
+		const agent = new ClaudeCodeAgent({
+			systemPrompt,
+			model: engine.model,
+			thinkingLevel: engine.level,
+			tools,
+			messages: opts.messages ?? [],
+			chatId: opts.chatId,
+			finishTurn: (turn) => stopper(turn),
+		});
+		if (opts.onUsage) {
+			agent.subscribe((event: AgentEvent) => {
+				if (event.type === "message_end" && event.message.role === "assistant" && "usage" in event.message && event.message.stopReason !== "aborted") opts.onUsage!(event.message.usage);
+			});
+		}
+		return agent;
+	}
 	const providerEvents = opts.chatId ? providerEventObserver(opts.chatId, kind) : undefined;
 	const seenInputs = new Set((opts.messages ?? []).map((m) => (m as { id?: string }).id).filter(Boolean));
 	const agent = new Agent({

@@ -5,6 +5,8 @@ import { APP_IDENTITY, piEngineFor, type PiEngine } from "../models.ts";
 import { usageWasAdmitted } from "../subscription-request-cycle.ts";
 import { providerEventObserver } from "../provider-events.ts";
 import type { ModelRole } from "../../../config.ts";
+import { ClaudeCodeAgent } from "../claude-code/agent.ts";
+import { isClaudeCodeProvider } from "../claude-code/catalog.ts";
 
 /**
  * The shared sub-agent runner (docs/pi-engine-swap.md §6): one helper every
@@ -65,7 +67,22 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 	let turns = 0;
 	// Debug recorder (owner, 2026-10-04): raw provider events per job run.
 	const providerEvents = opts.chatId ? providerEventObserver(opts.chatId, `job:${opts.role}`) : undefined;
-	const agent = new Agent({
+	// Claude Code engine (docs/claude-code-engine.md, phase 2): a one-shot
+	// session per run (no chatId → never resumed, never persisted); the
+	// same turn cap and stop rule ride finishTurn.
+	const agent = isClaudeCodeProvider(engine.model.provider)
+		? new ClaudeCodeAgent({
+			systemPrompt: opts.systemPrompt,
+			model: engine.model,
+			thinkingLevel: engine.level,
+			tools,
+			messages: opts.messages ?? [],
+			finishTurn: (turn) => {
+				turns++;
+				return turns >= opts.maxTurns || opts.shouldStop?.(turn.message, turn.toolResults) === true;
+			},
+		})
+		: new Agent({
 		identity: APP_IDENTITY,
 		// One unsaved conversation per invocation, stable through every turn.
 		sessionId: randomUUID(),

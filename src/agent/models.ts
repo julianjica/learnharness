@@ -17,6 +17,8 @@ import { chatGPTStream } from "./chatgpt-stream.ts";
 import type { ChatGPTDispatchLifecycle } from "./chatgpt-request-cycle.ts";
 import { nativeSubscriptionId, nativeSubscriptionModel } from "./subscription-bridge.ts";
 import { nativeSubscriptionStream } from "./subscription-stream.ts";
+import { claudeCodeModel, isClaudeCodeProvider } from "./claude-code/catalog.ts";
+import { claudeCodeStreamFn } from "./claude-code/stream.ts";
 
 /** App identity is immutable and shared by Models and every native Agent.
  * Agent's default Pi attribution otherwise overrides the Models identity. */
@@ -100,6 +102,20 @@ function defaultThinkingLevel(model: Model<Api>): ThinkingLevel {
  *  hardcodes OpenRouter's. */
 export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (() => boolean) = true, lifecycle?: ChatGPTDispatchLifecycle): PiEngine {
 	const models: Models = piModels();
+	// Claude Code (docs/claude-code-engine.md): the agent factories see
+	// provider "claude-code" and build a ClaudeCodeAgent instead of pi's.
+	if (isClaudeCodeProvider(spec.provider)) {
+		const model = claudeCodeModel(spec.id);
+		if (!model) throw new Error(`claude-code catalog has no model ${spec.id}`);
+		const level = spec.thinkingLevel ? clampThinkingLevel(model, spec.thinkingLevel) : defaultThinkingLevel(model);
+		return {
+			model,
+			level,
+			// Agents never call this (they build a ClaudeCodeAgent); the two
+			// sub-agents with their own loop do — one call, tools unexecuted.
+			streamFn: claudeCodeStreamFn(level),
+		};
+	}
 	const nativeId = nativeSubscriptionId(spec.provider);
 	const model = spec.provider === "chatgpt" ? chatGPTModel(spec.id) : nativeId ? nativeSubscriptionModel(spec.provider, spec.id) : models.getModel(spec.provider, spec.id);
 	if (!model) {
