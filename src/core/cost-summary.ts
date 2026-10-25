@@ -18,13 +18,15 @@
  */
 
 import type { CallUsage, EmissionStats, ExtractionRunUsage } from "./contracts.ts";
-import { sumSteps, isSubscriptionModel, subscriptionLabels, type CallPricer } from "./prices.ts";
+import { sumSteps, isSubscriptionModel, subscriptionLabels, turnEstimate, type CallPricer } from "./prices.ts";
 
 /** One pipeline stage's cumulative cost across every run. */
 export interface StageCost {
 	/** Subscription stage-runs, excluded from API dollars and unpriced counts. */
 	subscriptionRuns?: number;
 	subscriptionProviders?: string[];
+	/** ≈ API-equivalent USD of this stage's local-CLI plan runs (never in `dollars`). */
+	estimate?: number;
 	/** Inferred USD summed over PRICED runs (partial when unpricedRuns > 0). */
 	dollars: number;
 	/** Stage-runs whose model is missing from Pi's catalog (render "—", never zero). */
@@ -49,6 +51,8 @@ export interface RecentRun {
 	title: string;
 	/** Whole-run inferred USD; null only when EVERY stage is unpriced. */
 	dollars: number | null;
+	/** ≈ API-equivalent USD of the run's local-CLI plan stages. */
+	estimate?: number;
 	tokens: CallUsage;
 	/** What the run merged into the graph; absent on failed runs. */
 	merged?: EmissionStats;
@@ -60,6 +64,8 @@ export interface GraphCostSummary {
 	subscriptionProviders?: string[];
 	/** Inferred USD across all priced stages of all runs. */
 	totalDollars: number;
+	/** ≈ API-equivalent USD of every local-CLI plan stage (never in totalDollars). */
+	estimate?: number;
 	/** Runs with no priced API stage and at least one unknown stage. */
 	unpricedRuns: number;
 	/** The billable pipeline stages. (Wave 7, owner ruling 2026-09-23:
@@ -128,6 +134,11 @@ export function graphCostSummary(input: CostSummaryInput, price: CallPricer): Gr
 
 	const foldExtractionRun = (run: ExtractionRunUsage, title: string) => {
 		const stages = run.stages ?? { extractor: { model: "unknown", steps: [] }, auditor: { model: "unknown", steps: [] } };
+		const extEstimate = turnEstimate(stages.extractor, price);
+		const audEstimate = turnEstimate(stages.auditor, price);
+		if (extEstimate !== null) extraction.estimate = (extraction.estimate ?? 0) + extEstimate;
+		if (audEstimate !== null) audit.estimate = (audit.estimate ?? 0) + audEstimate;
+		const runEstimate = extEstimate === null && audEstimate === null ? undefined : (extEstimate ?? 0) + (audEstimate ?? 0);
 		// Per-stage: tokens always count; dollars only when priced.
 		extraction.runs++;
 		mergeTokens(extraction.tokens, stages.extractor.steps);
@@ -164,6 +175,7 @@ export function graphCostSummary(input: CostSummaryInput, price: CallPricer): Gr
 			kind: "extraction",
 			title,
 			dollars: runDollars,
+			...(runEstimate === undefined ? {} : { estimate: runEstimate }),
 			tokens: sumSteps(allSteps),
 			...(run.stats ? { merged: run.stats } : {}),
 		});
@@ -185,6 +197,7 @@ export function graphCostSummary(input: CostSummaryInput, price: CallPricer): Gr
 	return {
 		...(subscriptionRuns ? { subscriptionRuns, subscriptionProviders: [...new Set([...(extraction.subscriptionProviders ?? []), ...(audit.subscriptionProviders ?? [])])] } : {}),
 		totalDollars: extraction.dollars + audit.dollars,
+		...(extraction.estimate === undefined && audit.estimate === undefined ? {} : { estimate: (extraction.estimate ?? 0) + (audit.estimate ?? 0) }),
 		unpricedRuns,
 		stages: { extraction, audit },
 		runs: capped,

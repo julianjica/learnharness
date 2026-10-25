@@ -44,6 +44,8 @@ export interface FakeCodexOptions {
 	failTurn?: string;
 	/** The process dies at startup with this reason. */
 	crash?: string;
+	/** Push this RateLimitSnapshot as account/rateLimits/updated after each step. */
+	rateLimits?: unknown;
 }
 
 export const newCodexLog = (): FakeCodexLog => ({ spawns: [], threadStarts: [], threadResumes: [], turnStarts: [], steers: [], interrupts: 0, toolResponses: [], closed: 0 });
@@ -121,6 +123,7 @@ export function fakeCodex(steps: FakeStep[], log: FakeCodexLog, opts: FakeCodexO
 					await tick();
 				}
 				notify("thread/tokenUsage/updated", { turnId, tokenUsage: { total: usageOf(100, 40, 42), last: usageOf(100, 40, 42), modelContextWindow: 400000 } });
+				if (opts.rateLimits) deliver({ method: "account/rateLimits/updated", params: { rateLimits: opts.rateLimits } });
 				// Let the client react to the step's end (interrupt / steer).
 				for (let i = 0; i < 5; i++) await tick();
 				if (interrupted) {

@@ -5,6 +5,7 @@ import { persistedView, steerText } from "../claude-code/agent.ts";
 import { effortFor } from "./catalog.ts";
 import { renderDelta, renderTranscript, textInput, type UserInput } from "./render.ts";
 import { CodexClient, codexEnv, spawnCodex, type ConnectFn } from "./rpc.ts";
+import { recordCodexRateLimits } from "../plan-limits.ts";
 import { CODEX_WORKDIR, fileLedger, fingerprintOf, toolsFingerprintOf, type ThreadLedger } from "./sessions.ts";
 
 /**
@@ -341,6 +342,7 @@ export class CodexAgent extends Agent {
 		};
 
 		const onNotification = async (method: string, params: Record<string, unknown>) => {
+			if (method === "account/rateLimits/updated") return recordCodexRateLimits(params.rateLimits);
 			if (finished) return;
 			if (threadId && params.threadId !== undefined && params.threadId !== threadId) return;
 			if (method === "turn/started") {

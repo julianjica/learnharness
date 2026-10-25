@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { subscriptionLabels, subscriptionLabel, type SessionPricing, type TurnUsage } from "@/src/core";
-import { formatTokens, formatUsd, planCostLabel, prettyModel } from "@/components/usage-format";
+import { PLAN_ENGINES, subscriptionLabels, subscriptionLabel, type PlanEngineId, type SessionPricing, type TurnUsage } from "@/src/core";
+import { PlanLimitsList, usePlanLimits } from "@/components/plan-limits";
+import { formatTokens, planCostLabel, prettyModel, turnCostLabel } from "@/components/usage-format";
 import { ModelControl, catalogLimits, useModelCatalog } from "@/components/model-picker";
 
 export function formatContextMeasurement(tokens: number | null, limit: number | null): string {
@@ -90,7 +91,11 @@ export function StatsBar({
 	// otherwise "—" (never a fake $0.0000).
 	const pricedCount = turns.length - unpriced - subscription;
 	const providers = pricing?.subscriptionProviders ?? subscriptionLabels(turns.map((turn) => turn.model));
-	const costLabel = planCostLabel(pricedCount > 0 ? cost : null, providers);
+	const costLabel = planCostLabel(pricedCount > 0 ? cost : null, providers, undefined, pricing?.planEstimate);
+	// Local-CLI plans this session ran on: their live usage limits ride the
+	// popover, re-read on open and after each turn (server caches a minute).
+	const planEngines = useMemo(() => PLAN_ENGINES.filter((e) => turns.some((t) => t.model.startsWith(`${e.provider}:`))).map((e) => e.provider as PlanEngineId), [turns]);
+	const { plans } = usePlanLimits(open && planEngines.length > 0, turns.length);
 
 	return (
 		<div
@@ -148,6 +153,12 @@ export function StatsBar({
 								<span>{subscription ? "Usage" : "Total cost"}</span>
 								<span className="tabular-nums text-card-foreground">{costLabel}</span>
 							</div>
+							{planEngines.length > 0 && (
+								<div data-testid="stats-plan-limits" className="mt-1.5 border-t pt-2">
+									<div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan limits</div>
+									<PlanLimitsList plans={plans} engines={planEngines} />
+								</div>
+							)}
 							{providers.includes("ChatGPT") && <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer" className="underline underline-offset-2">Manage ChatGPT usage</a>}
 							{unpriced > 0 && (
 								<div className="flex justify-between gap-2">
@@ -171,7 +182,7 @@ export function StatsBar({
 												</span>
 												<span className="flex shrink-0 items-center gap-2 tabular-nums text-card-foreground">
 													<span className="text-muted-foreground">{turn.steps.length} steps</span>
-													<span>{subscriptionLabel(turn.model) ?? (c === null ? "—" : formatUsd(c))}</span>
+													<span>{turnCostLabel(subscriptionLabel(turn.model), c, pricing?.turnEstimates?.[turn.id])}</span>
 												</span>
 											</li>
 										);

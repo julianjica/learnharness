@@ -5,7 +5,7 @@
 import { calculateCost, type Usage } from "@earendil-works/pi-ai";
 import { piModels } from "../agent/models.ts";
 import type { CallUsage, ChatRecord, JobRecord, TurnUsage } from "../core/contracts.ts";
-import { isSubscriptionModel, sessionCost as foldSessionCost, turnCost as foldTurnCost, jobCost as foldJobCost } from "../core/prices.ts";
+import { isSubscriptionModel, planCatalogModel, sessionCost as foldSessionCost, turnCost as foldTurnCost, turnEstimate, jobCost as foldJobCost } from "../core/prices.ts";
 
 function catalogModel(id: string) {
 	const colon = id.indexOf(":");
@@ -47,4 +47,15 @@ export function jobCost(job: Pick<JobRecord, "usage">): number | null {
 	const hasCalls = usage.calls?.length === usage.steps;
 	if (!hasCalls && usage.steps > 1 && catalogModel(usage.model)?.cost.tiers?.length) return null;
 	return foldJobCost(job, callCost);
+}
+
+/** A plan-engine job priced at its catalog twin's API rates (≈, read-time,
+ *  never stored or added to real spend). Same safety rule as jobCost. */
+export function jobEstimate(job: Pick<JobRecord, "usage">): number | null {
+	const usage = job.usage;
+	const catalog = planCatalogModel(usage?.model);
+	if (!usage || !catalog || usage.steps < 1) return null;
+	if (usage.calls && usage.calls.length === usage.steps) return turnEstimate({ model: usage.model, steps: usage.calls }, callCost);
+	if (usage.steps > 1 && catalogModel(catalog)?.cost.tiers?.length) return null;
+	return callCost(usage, catalog);
 }

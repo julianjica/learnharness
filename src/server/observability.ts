@@ -24,7 +24,7 @@ import { chatStore } from "../store/chats.ts";
 import { graphRevision } from "./graph.ts";
 import { catalogContextLimits } from "./model-catalog.ts";
 import { listJobs } from "./jobs.ts";
-import { jobCost } from "./pricing.ts";
+import { jobCost, jobEstimate } from "./pricing.ts";
 import type { JobRecord } from "../core/contracts.ts";
 
 export { abortExtraction, extractionStatuses, type ExtractionPhase, type RunningExtraction } from "../agent/subagents/extraction.ts";
@@ -38,6 +38,8 @@ export { chatStore } from "../store/chats.ts";
  *  line — never a fake window). */
 export interface ActivityJob extends JobRecord {
 	costUsd: number | null;
+	/** ≈ API-equivalent USD for a local-CLI plan job; null otherwise. */
+	estimateUsd: number | null;
 	title: string;
 	contextLimit: number | null;
 }
@@ -80,6 +82,7 @@ export function activityFeed(): {
 				jobs.push({
 					...job,
 					costUsd: jobCost(job),
+					estimateUsd: jobEstimate(job),
 					title: chat.title ?? chat.id,
 					contextLimit: job.usage ? (limits.get(job.usage.model) ?? null) : null,
 				});

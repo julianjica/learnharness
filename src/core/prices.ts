@@ -11,6 +11,30 @@ export interface SessionPricing {
 	subscriptionProviders?: string[];
 	/** Derived at read time, keyed by the persisted turn's id. Never stored. */
 	turnCosts: Record<string, number | null>;
+	/** Local-CLI plan turns priced as if billed to the API (≈, never real
+	 *  spend, never added to `cost`). Absent when no plan turn could be priced. */
+	planEstimate?: number;
+	turnEstimates?: Record<string, number | null>;
+}
+
+/** The local-CLI plan engines (docs/claude-code-engine.md,
+ *  docs/codex-engine.md): the logical provider, its label, and the catalog
+ *  provider that sells the same model on the API — the basis of the ≈
+ *  API-equivalent estimate. */
+export const PLAN_ENGINES = [
+	{ provider: "claude-code", label: "Claude plan", catalogProvider: "anthropic" },
+	{ provider: "codex", label: "ChatGPT plan", catalogProvider: "openai-codex" },
+] as const;
+
+function planEngine(model: string | undefined) {
+	return PLAN_ENGINES.find((engine) => model?.startsWith(`${engine.provider}:`));
+}
+
+/** "claude-code:claude-opus-5-5" → "anthropic:claude-opus-5-5"; undefined
+ *  for anything that is not a plan engine's model. */
+export function planCatalogModel(model: string | undefined): string | undefined {
+	const engine = planEngine(model);
+	return engine ? `${engine.catalogProvider}:${model!.slice(engine.provider.length + 1)}` : undefined;
 }
 
 export function isChatGPTPlan(model: string | undefined): boolean {
@@ -18,6 +42,8 @@ export function isChatGPTPlan(model: string | undefined): boolean {
 }
 export function subscriptionLabel(model: string | undefined): string | undefined {
 	if (isChatGPTPlan(model)) return "ChatGPT";
+	const plan = planEngine(model);
+	if (plan) return plan.label;
 	return NATIVE_SUBSCRIPTIONS.find((p) => model?.startsWith(`${p.logicalId}:`))?.label;
 }
 export function isSubscriptionModel(model: string | undefined): boolean { return subscriptionLabel(model) !== undefined; }
@@ -52,19 +78,45 @@ export function turnCost(turn: Pick<TurnUsage, "model" | "steps">, price: CallPr
 	return total;
 }
 
+/** A plan turn priced at its catalog twin's API rates (≈); null when the
+ *  turn is not a plan turn or any step cannot be priced. */
+export function turnEstimate(turn: Pick<TurnUsage, "model" | "steps">, price: CallPricer): number | null {
+	const catalog = planCatalogModel(turn.model);
+	if (!catalog || turn.steps.length === 0) return null;
+	let total = 0;
+	for (const step of turn.steps) {
+		const cost = price(step, catalog);
+		if (cost === null) return null;
+		total += cost;
+	}
+	return total;
+}
+
 export function sessionCost(record: Pick<ChatRecord, "turns">, price: CallPricer): SessionPricing {
 	let cost = 0;
 	let unpriced = 0;
 	let subscription = 0;
+	let planEstimate: number | undefined;
 	const turnCosts: Record<string, number | null> = {};
+	const turnEstimates: Record<string, number | null> = {};
 	for (const turn of record.turns ?? []) {
 		const dollars = turnCost(turn, price);
 		turnCosts[turn.id] = dollars;
+		if (planCatalogModel(turn.model)) {
+			const estimate = turnEstimate(turn, price);
+			turnEstimates[turn.id] = estimate;
+			if (estimate !== null) planEstimate = (planEstimate ?? 0) + estimate;
+		}
 		if (isSubscriptionModel(turn.model)) subscription++;
 		else if (dollars === null) unpriced++;
 		else cost += dollars;
 	}
-	return { cost, unpriced, ...(subscription ? { subscription, subscriptionProviders: subscriptionLabels((record.turns ?? []).map((turn) => turn.model)) } : {}), turnCosts };
+	return {
+		cost, unpriced,
+		...(subscription ? { subscription, subscriptionProviders: subscriptionLabels((record.turns ?? []).map((turn) => turn.model)) } : {}),
+		turnCosts,
+		...(planEstimate === undefined ? {} : { planEstimate, turnEstimates }),
+	};
 }
 
 export function jobCost(job: Pick<JobRecord, "usage">, price: CallPricer): number | null {

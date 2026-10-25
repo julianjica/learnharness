@@ -9,6 +9,7 @@ import { toLlmMessages } from "../../core/native-messages.ts";
 import { claudeCodeExecutable, effortFor } from "./catalog.ts";
 import { createToolServer, mcpToolName, recordToolName } from "./mcp.ts";
 import { renderDelta, renderTranscript, type InputBlock } from "./render.ts";
+import { noteClaudeRateLimitEvent } from "../plan-limits.ts";
 import { CLAUDE_CODE_WORKDIR, fileLedger, fingerprintOf, type SessionLedger } from "./sessions.ts";
 
 /**
@@ -467,6 +468,10 @@ export class ClaudeCodeAgent extends Agent {
 			for await (const msg of query({ prompt: input, options })) {
 				if (msg.type === "system" && (msg as { subtype?: string }).subtype === "init") {
 					sessionId = (msg as { session_id: string }).session_id ?? sessionId;
+					continue;
+				}
+				if (msg.type === "rate_limit_event") {
+					noteClaudeRateLimitEvent();
 					continue;
 				}
 				if (msg.type === "stream_event") {

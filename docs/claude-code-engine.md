@@ -130,6 +130,19 @@ Sub-agents run one-shot unpersisted sessions (`persistSession: false`).
   `additionalContext` that changed the next tool call's arguments, and resume
   with a new system prompt.
 
+## Plan limits and API-equivalent cost
+
+Shared by both local-CLI engines.
+
+- **Labels.** `claude-code:*` turns read as **"Claude plan"** and `codex:*` turns as **"ChatGPT plan"** (`PLAN_ENGINES` in `src/core/prices.ts`). Every cost surface treats them like upstream's subscription connections: never "unpriced", never added to real dollars.
+- **≈ estimate.** At read time, plan usage is priced through pi's catalog under the model's API twin: `claude-code:X` → `anthropic:X`, and `codex:X` → `openai-codex:X`. It uses the same `callCost` as API turns. `SessionPricing.planEstimate` / `turnEstimates`, `jobEstimate` and the graph summary's `estimate` fields carry it. The UI shows it apart from real spend, marked ≈. A model with no catalog price gets no estimate (never a fake $0). Nothing is stored.
+- **Live limits** (`src/agent/plan-limits.ts`, `GET /api/plan-limits`). There's one in-memory snapshot per engine: windows with % used and reset time, the plan type, and an extra-usage or credits note.
+  - **Codex:** read with `account/rateLimits/read` on a short-lived app-server. `CodexAgent` also records every `account/rateLimits/updated` that runs receive.
+  - **Claude Code:** read with the Agent SDK's `usage_EXPERIMENTAL_…` request on a session that is never prompted. A run's `rate_limit_event` schedules a debounced re-read (the event's own fields are under-documented, so they aren't parsed).
+  - **Cost and staleness:** neither read spends tokens. The route serves snapshots younger than 60 s from cache, and `?refresh=1` forces a read.
+  - **Shown in:** the stats-bar popover (only the plans the session used) and Settings → Providers → Plans (local CLIs).
+- **Limits.** Which windows appear depends on the account; the UI shows whatever comes back. Claude's usage request is experimental in the SDK and is parsed defensively, so an unknown shape shows "unavailable".
+
 ## Known limits
 
 - Each turn spawns a Claude Code process, which adds about 1–3 s of latency.

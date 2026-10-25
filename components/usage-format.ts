@@ -8,9 +8,21 @@ export function formatUsd(c: number): string {
 	return c >= 1 ? `$${c.toFixed(2)}` : `$${c.toFixed(4)}`;
 }
 
-export function planCostLabel(dollars: number | null, subscription: boolean | string | readonly string[] | undefined, format = formatUsd): string {
+/** Real dollars and plan labels, joined with " + ". `estimate` (≈ API-
+ *  equivalent USD of local-CLI plan usage) rides after the plan labels and
+ *  is never added to the dollars: "$0.12 + Claude plan ≈$0.40". */
+export function planCostLabel(dollars: number | null, subscription: boolean | string | readonly string[] | undefined, format = formatUsd, estimate?: number | null): string {
 	const labels = subscription === true ? ["ChatGPT"] : typeof subscription === "string" ? [subscription] : Array.isArray(subscription) ? [...new Set(subscription)] : [];
-	return [...(dollars === null ? [] : [format(dollars)]), ...labels].join(" + ") || "—";
+	const plans = labels.join(" + ");
+	const planPart = plans && estimate != null ? `${plans} ≈${format(estimate)}` : plans;
+	return [...(dollars === null ? [] : [format(dollars)]), ...(planPart ? [planPart] : [])].join(" + ") || "—";
+}
+
+/** One turn's cost cell: a plan turn shows its label (with its ≈ estimate
+ *  when priced, "Claude plan · ≈$0.03"), an API turn its dollars, else "—". */
+export function turnCostLabel(plan: string | undefined, dollars: number | null, estimate?: number | null): string {
+	if (plan) return estimate != null ? `${plan} · ≈${formatUsd(estimate)}` : plan;
+	return dollars === null ? "—" : formatUsd(dollars);
 }
 
 /** 38000 → "38k", 1234567 → "1.2M" — trimmed, never "38.0k". */

@@ -50,6 +50,8 @@ interface FeedUsage extends NonNullable<JobRecord["usage"]> {
 export interface FeedJob extends JobRecord {
 	/** Read-time server estimate; absent on older transport payloads. */
 	costUsd?: number | null;
+	/** ≈ API-equivalent USD of a local-CLI plan job (never real spend). */
+	estimateUsd?: number | null;
 	title: string;
 	usage?: FeedUsage;
 	/** Server-joined live catalog limit (owner amendment 2026-09-23) —
@@ -180,6 +182,8 @@ export interface ActivityBlob {
 	startedAt: number;
 	/** Inferred USD cost (jobCost) — null renders "—". */
 	cost: number | null;
+	/** ≈ API-equivalent USD for a local-CLI plan job (jobEstimate). */
+	estimate?: number | null;
 	/** Last model call's footprint vs the model's limit — null renders "—". */
 	context: { used: number; limit: number } | null;
 	/** Latest human-readable activity line (""). */
@@ -223,6 +227,7 @@ export function toBlobs(feed: ActivityFeed): ActivityBlob[] {
 			chatId: job.chatId,
 			startedAt: Date.parse(job.createdAt) || 0,
 			cost: job.costUsd ?? null,
+			estimate: job.estimateUsd ?? null,
 			context,
 			// BYOK (owner, 2026-09-22): a refusal is info, not failure —
 			// the honest line the runner left ("failed") reads as setup
@@ -304,6 +309,10 @@ export function ActivitySection({ feed: feedProp }: { feed?: ActivityFeed }) {
 		const priced = blobs.map((b) => b.cost).filter((c): c is number => c !== null);
 		return priced.length === 0 ? null : priced.reduce((a, c) => a + c, 0);
 	}, [blobs]);
+	const totalEstimate = useMemo(() => {
+		const estimated = blobs.map((b) => b.estimate).filter((c): c is number => c != null);
+		return estimated.length === 0 ? null : estimated.reduce((a, c) => a + c, 0);
+	}, [blobs]);
 
 	const abort = useCallback(async (blob: ActivityBlob) => {
 		const { setAbortStates: set } = abortRef.current;
@@ -350,7 +359,7 @@ export function ActivitySection({ feed: feedProp }: { feed?: ActivityFeed }) {
 				Background agents
 				{blobs.length > 0 && (
 					<span className="ml-auto tabular-nums" data-testid="activity-total-cost" title="Total running cost (inferred)">
-						{planCostLabel(totalCost, subscriptionLabels(blobs.map((blob) => blob.model)))}
+						{planCostLabel(totalCost, subscriptionLabels(blobs.map((blob) => blob.model)), undefined, totalEstimate)}
 				</span>
 				)}
 			</div>
@@ -425,7 +434,7 @@ function ActivityBlobRow({
 					)}
 				</span>
 				<span className="flex shrink-0 items-center gap-2 tabular-nums text-muted-foreground">
-					<span data-testid="activity-blob-cost">{planCostLabel(blob.cost, subscriptionLabel(blob.model))}</span>
+					<span data-testid="activity-blob-cost">{planCostLabel(blob.cost, subscriptionLabel(blob.model), undefined, blob.estimate)}</span>
 					<span data-testid="activity-blob-elapsed">{formatElapsed(now - blob.startedAt)}</span>
 				</span>
 			</button>
@@ -464,7 +473,7 @@ function ActivityBlobRow({
 						<div className="flex justify-between gap-2">
 							<span>Cost</span>
 							<span className="tabular-nums text-card-foreground">
-								{planCostLabel(blob.cost, subscriptionLabel(blob.model))}
+								{planCostLabel(blob.cost, subscriptionLabel(blob.model), undefined, blob.estimate)}
 							</span>
 						</div>
 						<div className="flex justify-between gap-2">

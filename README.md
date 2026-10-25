@@ -100,7 +100,8 @@ You can mix freely: Claude for teaching and Codex for background jobs, or a plan
 
 ### What changes when you use a plan
 
-- **Cost meter:** plan runs show **$0**. The subscription pays, and LearnHarness doesn't estimate plan costs. Token counts are still recorded.
+- **Cost meter:** plan runs show the plan's name plus an **API-equivalent estimate**, e.g. `Claude plan ≈$0.40` or `$0.12 + ChatGPT plan ≈$0.40` when a session also used an API key. The estimate is what the same tokens would cost at that model's API price (the price table LearnHarness already uses). It's marked ≈, and it's never added to real spend.
+- **Plan usage limits:** open the cost in a session's stats bar, or go to **Settings → Providers → Plans (local CLIs)**. You'll see each plan's windows (for example 5-hour and weekly) with the % used and the reset time, read live from the signed-in CLI without spending tokens. Readings stay up to date during runs and are refreshed when older than a minute. Settings has a Refresh button.
 - **Thinking level:** it maps to the CLI's reasoning effort (low → max). On Codex, "off" means its lowest effort.
 - **Speed:** each turn starts a CLI process, which adds about 1–3 s.
 - **History:** each chat keeps its own Claude Code session or Codex thread, so later turns send only what's new. These sessions run in `data/claude-code/` and `data/codex/` and stay out of your own project history.
