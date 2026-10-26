@@ -16,6 +16,10 @@ const prose = Source_Sans_3({ subsets: ["latin"], variable: "--font-sans3" });
 export const metadata: Metadata = {
 	title: "Learning Harness",
 	description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
+	// The app ships its own dark theme. Dark Reader's injected inline
+	// styles (data-darkreader-*) otherwise make React report hydration
+	// mismatches; this tag tells the extension to leave the page alone.
+	other: { "darkreader-lock": "true" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
