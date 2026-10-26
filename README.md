@@ -87,7 +87,7 @@ Everything else stays the same: the teaching method, the plan tree, the knowledg
 ```bash
 git clone https://github.com/julianjica/learnharness.git
 cd learnharness
-git checkout codex-engine     # the branch with both engines
+git checkout local-cli-engines # the branch with both engines
 npm install
 npm run dev                   # open http://localhost:3000
 ```
