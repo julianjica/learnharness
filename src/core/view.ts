@@ -419,6 +419,17 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 			});
 			return;
 		}
+		case "aside": {
+			// The side thread delivered in a practice session (asides, owner
+			// 2026-10-26): the Aside blocks, in place, before the input that
+			// carried them to the agent.
+			out.push({
+				id: marker.id,
+				role: "user",
+				parts: [{ type: "data-asides", id: `as_${marker.id}`, data: marker.details }],
+			});
+			return;
+		}
 		case "problem-dismissed":
 			// UI-only (the ask-style dismissal): the synthesized conclude
 			// pair — which rides the NEXT input — carries the record's face.

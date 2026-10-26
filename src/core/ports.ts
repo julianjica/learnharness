@@ -19,6 +19,7 @@ import type {
 	JobKind,
 	JobRecord,
 	ExtractionRunUsage,
+	PendingAside,
 	PlanTree,
 	Position,
 	CoverageEntry,
@@ -51,6 +52,8 @@ export interface ChatStore {
 	appendTurnUsage(id: string, entry: TurnUsage): void;
 	/** Append one extraction-run usage entry — idempotent per startedAt. */
 	appendExtractionUsage(id: string, entry: ExtractionRunUsage): void;
+	/** Add a completed aside to the record's pending list (asides). */
+	appendPendingAside(id: string, aside: PendingAside): void;
 	/** Persist the per-chat model/thinking settings (the model control).
 	 *  Replace-whole: the picker sends the complete settings object. */
 	saveSettings(id: string, settings: ChatSettings): void;

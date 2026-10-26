@@ -37,12 +37,14 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { QUESTION_TOOLS } from "./pending.ts";
 import {
+	ASIDES_HEADER,
 	CONCLUDE_ACK_TEXT,
 	HANDOFF_TEXT,
 	NEXT_PROBLEM_TEXT,
 	THINKING_LABEL,
 } from "./contracts/chat.ts";
 import { compactAnswerForModel, type QuestionAnswerData } from "./question-core.ts";
+import type { Aside } from "./contracts/asides.ts";
 import { activeCompactionOf, keptIndexFor } from "./compaction.ts";
 
 /** The hard-invariant wording for an aborted turn's unanswered calls —
@@ -73,6 +75,7 @@ export interface LhMarkerMessage {
 		| "plan-block"
 		| "practice-thinking"
 		| "practice-next"
+		| "aside"
 		| "problem-dismissed"
 		| "compaction";
 	/** The model-facing text ("" for plan blocks — UI-only). */
@@ -251,6 +254,23 @@ export function newThinkingMessage(problemCallId: string, text: string): LhMarke
 		content: `${THINKING_LABEL}:\n${text}`,
 		display: true,
 		details: { problemCallId, text },
+		timestamp: Date.now(),
+	};
+}
+
+/** The side thread's delivery in practice sessions (asides, owner
+ *  2026-10-26): appended right before the learner's next input. The
+ *  model reads the header + Q/A pairs; the transcript renders the Aside
+ *  blocks off `details.asides`. */
+export function newAsidesMessage(asides: readonly Aside[]): LhMarkerMessage {
+	const pairs = asides.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
+	return {
+		id: newMessageId(),
+		role: "custom",
+		customType: "aside",
+		content: `${ASIDES_HEADER}\n\n${pairs}`,
+		display: true,
+		details: { asides: [...asides] },
 		timestamp: Date.now(),
 	};
 }
@@ -683,7 +703,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "system" || message.role === "assistant") return "neutral";
 	if (message.role === "custom") {
 		if (["probe-handoff", "subagent-steer", "subagent-abort"].includes(message.customType)) return "automatic";
-		if (["practice-thinking", "practice-next"].includes(message.customType)) return "learner";
+		if (["practice-thinking", "practice-next", "aside"].includes(message.customType)) return "learner";
 		return ["graph-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {

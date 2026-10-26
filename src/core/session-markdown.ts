@@ -27,6 +27,7 @@ import {
 	problemInputForConclude,
 } from "./native-messages.ts";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Aside } from "./contracts/asides.ts";
 
 /** The user-facing text blocks of a native message (string or text parts). */
 function textOf(content: unknown): string[] {
@@ -48,6 +49,24 @@ export interface MarkdownContext {
 	messages: ReadonlyArray<LhMessage>;
 	/** toolCallId → the call part's name + arguments. */
 	calls: Map<string, { name: string; args: Record<string, unknown> | undefined }>;
+}
+
+/** Side questions as Q/A markdown lines (asides, owner 2026-10-26) —
+ *  shared by answered checks here and the side thread's own context. */
+export function asideLines(asides: readonly Aside[]): string[] {
+	return asides.map((a) => `**Side question:** ${a.question.trim()}\n\n**Side answer:** ${a.answer.trim()}`);
+}
+
+/** The asides an answer carried — empty on every pre-aside record, so old
+ *  sessions render byte-identically. */
+function answerAsides(out: unknown): string[] {
+	const asides = (out as { asides?: unknown } | null | undefined)?.asides;
+	if (!Array.isArray(asides)) return [];
+	return asideLines(asides.filter((a): a is Aside => typeof (a as Aside)?.question === "string" && typeof (a as Aside)?.answer === "string"));
+}
+
+export function sessionMarkdownContext(messages: ReadonlyArray<LhMessage>): MarkdownContext {
+	return markdownContext(messages);
 }
 
 function markdownContext(messages: ReadonlyArray<LhMessage>): MarkdownContext {
@@ -112,6 +131,7 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		else if (out?.correct === false) body.push("The learner answered incorrectly.");
 		else if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner answered in his own words: ${out.text.trim()}`);
 		if (typeof out?.note === "string" && out.note) body.push(`*(his thinking: ${out.note})*`);
+		body.push(...answerAsides(out));
 		return { heading, body };
 	}
 
@@ -149,6 +169,7 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		else if (chosen.length > 0) body.push(`The learner chose: ${chosen.join(", ")}`);
 		else if (out?.dismissed === true) body.push("The learner skipped this question.");
 		if (typeof out?.note === "string" && out.note) body.push(`*(his thinking: ${out.note})*`);
+		body.push(...answerAsides(out));
 		return { heading: "Question", body };
 	}
 

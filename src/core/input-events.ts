@@ -27,8 +27,11 @@
 
 import type { QuestionAnswerData } from "./question-core.ts";
 import type { LhMessage } from "./native-messages.ts";
+import type { PendingAside } from "./contracts/asides.ts";
+import { asidesFor } from "./asides.ts";
 import {
 	activeProblemOf,
+	newAsidesMessage,
 	concludedByDismissalPair,
 	danglingQuestionOf,
 	newAnswerResult,
@@ -129,7 +132,7 @@ export function parseUserSteerInput(input: unknown): UserSteerInput {
 /** The native appends a dismissal makes (pure — same orphan discipline
  *  as answers: the call must be a DANGLING question call, or — the
  *  practice variant — the ACTIVE problem). */
-export function dismissAppends(record: { messages: LhMessage[] }, input: DismissInput): LhMessage[] {
+export function dismissAppends(record: { messages: LhMessage[]; pendingAsides?: PendingAside[] }, input: DismissInput): LhMessage[] {
 	if (input.type === "dismiss-problem") {
 		const active = activeProblemOf(record.messages);
 		if (!active || active.toolCallId !== input.problemCallId) {
@@ -144,7 +147,7 @@ export function dismissAppends(record: { messages: LhMessage[] }, input: Dismiss
 	if (input.answer.kind !== toolQuestionKind(pending.tool)) {
 		throw new ChatInputError("dismiss input's answer kind does not match the question");
 	}
-	return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
+	return [newAnswerResult(input.toolCallId, pending.tool, withAsides(input.answer, record, input.toolCallId))];
 }
 
 /** A malformed input event (the honest 400 — the orphan-trap discipline). */
@@ -195,18 +198,18 @@ export function parseChatInput(input: unknown): ChatInput {
  * double-answering.
  */
 export function inputAppends(
-	record: { messages: LhMessage[]; kind?: string },
+	record: { messages: LhMessage[]; kind?: string; pendingAsides?: PendingAside[] },
 	input: ChatInput,
 ): LhMessage[] {
 	switch (input.type) {
 		case "text":
-			return [...dismissalConclusion(record), newUserMessage(input.text)];
+			return [...practiceAsides(record), ...dismissalConclusion(record), newUserMessage(input.text)];
 		case "answer": {
 			const pending = danglingQuestionOf(record.messages);
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
 			}
-			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
+			return [newAnswerResult(input.toolCallId, pending.tool, withAsides(input.answer, record, input.toolCallId))];
 		}
 		case "continue":
 			return dismissalConclusion(record);
@@ -215,7 +218,7 @@ export function inputAppends(
 			if (!active || active.toolCallId !== input.problemCallId) {
 				throw new ChatInputError("thinking input targets no active problem");
 			}
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text)];
+			return [...practiceAsides(record), ...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text)];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a
@@ -228,9 +231,29 @@ export function inputAppends(
 			if (activeProblemOf(record.messages)) {
 				throw new ChatInputError("next input requires no active problem");
 			}
-			return [...dismissalConclusion(record), newNextMessage()];
+			return [...practiceAsides(record), ...dismissalConclusion(record), newNextMessage()];
 		}
 	}
+}
+
+/** ASIDES DELIVERY (owner 2026-10-26): a check's answer (or dismissal)
+ *  carries the side questions hung on that check — the server folds them
+ *  in; the client never sends them. Unchanged when none wait. */
+function withAsides(
+	answer: QuestionAnswerData,
+	record: { pendingAsides?: PendingAside[] },
+	toolCallId: string,
+): QuestionAnswerData {
+	const asides = asidesFor(record.pendingAsides, toolCallId);
+	return asides.length > 0 ? { ...answer, asides: [...(answer.asides ?? []), ...asides] } : answer;
+}
+
+/** Practice sessions deliver EVERY waiting aside as one marker ahead of
+ *  the learner's next input (nothing dangles in practice, so a marker is
+ *  legal there). Empty outside practice or when none wait. */
+function practiceAsides(record: { kind?: string; pendingAsides?: PendingAside[] }): LhMessage[] {
+	if (record.kind !== "practice" || !record.pendingAsides?.length) return [];
+	return [newAsidesMessage(record.pendingAsides.map(({ anchorId: _anchor, ...aside }) => aside))];
 }
 
 /** The deferred conclude synthesis (owner ruling, 2026-10-04): a

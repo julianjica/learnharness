@@ -19,6 +19,7 @@
 
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
+import type { Aside } from "./contracts/asides.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -462,6 +463,10 @@ export interface QuestionAnswerData {
 	 *  2026-10-03) — a separate channel from `thinking`, captured by the
 	 *  reading field and riding the check answer. Absent when empty. */
 	readingThinking?: string;
+	/** Side questions the learner asked while this check waited (asides,
+	 *  owner 2026-10-26) — folded in by the server at answer/dismiss time,
+	 *  never sent by the client. Absent on old records and when none. */
+	asides?: Aside[];
 	confidence?: number; // quiz only: the learner's stated probability (0-100, raw) that his selected answer is correct — never sent on "I don't know" (owner, 2026-10-01)
 	correct?: boolean; // quiz only
 	correctIndices?: number[]; // quiz only (rendering)
@@ -761,8 +766,16 @@ export function dismissedAnswer(kind: QuestionKind, questionText: string): Quest
 	};
 }
 
+/** The model's face of asides: question + answer only (ids/times are
+ *  bookkeeping). Absent when none — old answers serialize unchanged. */
+export function asidesForModel(asides: readonly Aside[] | undefined): { question: string; answer: string }[] | undefined {
+	if (!Array.isArray(asides) || asides.length === 0) return undefined;
+	return asides.map((a) => ({ question: a.question, answer: a.answer }));
+}
+
 export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, unknown> {
-	if (ad.dismissed) return { kind: ad.kind, dismissed: true };
+	const asides = asidesForModel(ad.asides);
+	if (ad.dismissed) return asides ? { kind: ad.kind, dismissed: true, asides } : { kind: ad.kind, dismissed: true };
 	const out: Record<string, unknown> = { kind: ad.kind };
 	if (ad.dontKnow) out.dontKnow = true;
 	// Array.isArray: the seam is called with `unknown` answers (test
@@ -783,5 +796,7 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	const thinking = ad.thinking ?? ad.note;
 	if (thinking) out.thinking = thinking;
 	if (ad.readingThinking) out.thinkingWhileReading = ad.readingThinking;
+	// A third channel: the side thread held while the check waited.
+	if (asides) out.asides = asides;
 	return out;
 }

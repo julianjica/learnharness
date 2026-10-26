@@ -10,6 +10,7 @@ import type { LhMessage } from "../native-messages.ts";
 import type { Phase3 } from "../phases.ts";
 import type { PlanNodeStatus, PlanTree } from "./plan.ts";
 import type { EmissionStats } from "./graph.ts";
+import type { PendingAside } from "./asides.ts";
 
 // ─── Chat records (the session store's on-disk format) ───────────────────────
 
@@ -52,6 +53,10 @@ export interface ChatRecord {
 	extractions?: ExtractionRunUsage[];
 	/** Per-chat model/thinking overrides for the conversation agents. */
 	settings?: ChatSettings;
+	/** Asides not yet delivered to the main agent (contracts/asides.ts).
+	 *  Absent on older records and whenever nothing waits; the store drops
+	 *  an entry once its id appears in the delivered messages. */
+	pendingAsides?: PendingAside[];
 	/** SCHEMA STAMP (schema-versioning wave, owner 2026-10-10): LAZY v1 —
 	 *  existing records stay unstamped (absence reads as v1); every write
 	 *  stamps the current version. A record stamped NEWER than this build
@@ -219,6 +224,13 @@ export const CONCLUDE_ACK_TEXT =
  *  marker; the model reads this and poses (or wraps) per the doctrine. */
 export const NEXT_PROBLEM_TEXT =
 	"[NEXT PROBLEM] — the learner's explicit go-ahead: pose the next problem now per the selection rules, or wrap the session in text if the arc is complete.";
+
+/** The aside marker's model-facing header (asides, owner 2026-10-26):
+ *  practice sessions deliver the side thread as a marker right before the
+ *  learner's next input. Check answers carry theirs in the answer's own
+ *  `asides` key instead (the adjacency law forbids a marker there). */
+export const ASIDES_HEADER =
+	"[SIDE THREAD] While working, the learner asked these side questions; they were already answered in a side thread (shown here). Build on them; do not repeat the answers.";
 
 /** The compaction marker's model-facing header (owner round 14,
  *  2026-10-05). The marker's content is this header + the summary — the

@@ -12,11 +12,12 @@ import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
-import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PlanTree, TurnUsage } from "../core/contracts.ts";
+import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PendingAside, PlanTree, TurnUsage } from "../core/contracts.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
 import { phaseAt3Lh } from "../core/phases.ts";
+import { undeliveredAsides } from "../core/asides.ts";
 
 function chatFile(id: string): string {
 	if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`Invalid chat id: ${id}`);
@@ -84,7 +85,7 @@ function listChats(): ChatSummary[] {
 			.filter((f) => f.endsWith(".json"))
 			.map((f) => getChat(f.slice(0, -5)))
 			.filter((r): r is ChatRecord => r !== null)
-			.map(({ messages, tree, turns, extractions, ...summary }) => {
+			.map(({ messages, tree, turns, extractions, pendingAsides: _asides, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the
 				// projection (e.g. pre-Wave-B UIMessage-format scratch — the
 				// zero-back-compat wipe makes these "corrupt") must not blank the
@@ -128,6 +129,23 @@ function saveMessages(id: string, messages: LhMessage[]): void {
 	if (!record) throw new Error(`Chat not found: ${id}`);
 	record.messages = messages;
 	record.updatedAt = new Date().toISOString();
+	// Asides delivered by these messages leave the pending list (the
+	// field disappears when empty — untouched records stay untouched).
+	if (record.pendingAsides) {
+		const rest = undeliveredAsides(record.pendingAsides, messages);
+		if (rest.length > 0) record.pendingAsides = rest;
+		else delete record.pendingAsides;
+	}
+	writeChat(record);
+}
+
+/** Add one completed aside to the pending list (asides, owner
+ *  2026-10-26). Silent like every content writer; not conversation
+ *  activity until delivered, so updatedAt stays put. */
+function appendPendingAside(id: string, aside: PendingAside): void {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	record.pendingAsides = [...(record.pendingAsides ?? []).filter((a) => a.id !== aside.id), aside];
 	writeChat(record);
 }
 
@@ -216,4 +234,5 @@ export const chatStore: ChatStore = {
 	deleteChat,
 	appendTurnUsage,
 	appendExtractionUsage,
+	appendPendingAside,
 };
