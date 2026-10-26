@@ -306,6 +306,14 @@ sequenceDiagram
 - **Client-side question tools** (`quiz`, `ask_user_question`) have no server execute: the call streams to the browser, the learner answers in the dock, the client grades via `question-core` and returns the verdict with `addToolOutput`, which fires the continuation. A pending quiz persisted in the record is exactly what makes **resume mid-question free**. Deterministic seeded shuffling (keyed by toolCallId) keeps server and client renders identical.
 - **The prober→teacher handoff**: the first turn(s) run the prober (floor/ceiling via quiz, goal via ask); `probe_done` (server-executed) files the assessment and queues a handoff steer; from the first `tool-probe_done` part in the transcript, the handler builds the teacher agent for every later turn. Phases (`core/phases.ts`) fold strictly: probe → plan → teach.
 - **The formal plan tree is author-once**: the teacher authors the session's dependency map with a single schema-validated `plan_init` tool (a mermaid-subset graph, parsed deterministically with line-numbered errors, validated as a DAG). Progress is never mutated — statuses (`current`/`visited`/upcoming) are **derived** from tagged quiz calls in the transcript; the tree panel and the plan blocks render that derivation.
+- **Asides (side questions while a check waits, 2026-10-26)**: while a teach-phase question waits (never a probe question) or a practice problem is active, the learner can ask side questions above the dock. `POST /api/chats/[id]/aside` (`src/server/aside.ts`) is **not a turn**: no turn claim, no record messages, no wake.
+  - **The call:** one model call, no tools (`src/agent/aside.ts`, prompt `prompts/aside/00-base.md`). It runs on the chat's conversation model and streams plain text.
+  - **The context:** the lesson as session markdown plus the waiting question's learner-visible fields (`core/asides.ts asideContext`). The answer key and the model solution are never read.
+  - **Storage and delivery:** a completed aside joins `ChatRecord.pendingAsides`, keyed by the anchor call id. The learner's next input delivers it:
+    - a check's answer or dismissal carries `asides` (server-authoritative, model-facing under its own key, rendered for extraction);
+    - a practice input is preceded by an `aside` marker.
+    - `saveMessages` then drops the delivered entries.
+  - **Compatibility:** every field is optional and the schema version did not move. `tests/asides.test.ts` pins golden pre-feature records as byte-identical across view, markdown, wire, answers and cost.
 - **Job tools are server-executed, ack-and-steer**: `research`/`demo`/`visual` resolve immediately mid-turn with a fire-and-forget ack (the teacher keeps teaching); `spawn(job, input)` fires the background runner.
 - Each turn service is a named, error-contained seam taking explicit deps; failures log one `[chat <id>]` line and never touch the response. Swapping any of them touches nothing else.
 
