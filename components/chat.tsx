@@ -5,6 +5,7 @@ import { useChatSession } from "@/components/session";
 import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
+import { cn } from "@/lib/utils";
 import { useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { useStickToBottomContext, type StickToBottomContext } from "use-stick-to-bottom";
 import {
@@ -1634,7 +1635,7 @@ export function Chat({
 					requiresReveal={requiresReveal}
 					readingThinking={readingThinking}
 					onReadingThinking={applyReadingThinking}
-					aside={asideAnchor ? <AsideField disabled={busy || asides.asking || compacting} onAsk={(q) => void asides.ask(q)} /> : undefined}
+					aside={asideAnchor ? <AsideField inline disabled={busy || asides.asking || compacting} onAsk={(q) => void asides.ask(q)} /> : undefined}
 					phase={phases.at(-1) ?? "probe"}
 					turns={turns}
 					contextTokens={contextTokens}
@@ -1942,6 +1943,8 @@ function DockOverlay({
 	// revealed, the normal collapse machine rules apply untouched.
 	const [revealed, setRevealed] = useState(false);
 	const revealPending = requiresReveal && !revealed;
+	// The side row (owner, 2026-10-26): fields share a line with the check.
+	const sideRow = Boolean(aside) || (pending !== null && requiresReveal);
 
 	const pendingId = pending?.toolCallId ?? null;
 	const initialPendingRef = useRef(pendingId);
@@ -2310,6 +2313,14 @@ function DockOverlay({
 					    rounding starts, truncated, no background, no container. A
 					    line dies when its card lands (visibleQueuedSteers). */}
 					<QueuedSteersBody steers={queuedSteers} />
+					{/* THE SIDE ROW (owner, 2026-10-26): the reading field, the
+					    side-question field and the check share ONE wrapping row so
+					    they don't eat the reading space. Closed check: three across.
+					    Open (or the composer): the shell takes its own full-width
+					    line below the fields. Narrow windows stack. One container
+					    for every state, so the fields never remount and drafts
+					    survive opening the check. */}
+					<div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
 					{/* The reading-thinking field (owner 2026-10-03): mounted while a
 					    teach-phase check waits — the same cue that collapses it. It
 					    claims dictated speech until the learner reveals the check
@@ -2329,10 +2340,17 @@ function DockOverlay({
 									: undefined
 							}
 							claim={revealPending}
+							inline={sideRow}
 						/>
 					)}
 					{aside}
-					<div ref={shellRef} className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
+					<div
+						ref={shellRef}
+						className={cn(
+							"pointer-events-auto min-w-0 overflow-hidden rounded-2xl border bg-card shadow-lg",
+							sideRow && !expanded ? "sm:flex-[1.6]" : "sm:basis-full",
+						)}
+					>
 						<div
 						ref={contentRef}
 						key={mode}
@@ -2369,6 +2387,7 @@ function DockOverlay({
 								composer
 							)}
 						</div>
+					</div>
 					</div>
 					{/* The stats row: beneath the composer/question shell, not
 					    flush to the screen bottom — static height, outside the

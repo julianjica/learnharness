@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { cn } from "@/lib/utils";
 
 /**
  * The reading-thinking field (owner design 2026-10-03, "two questions per
@@ -24,6 +25,7 @@ export function ReadingThinkingField({
 	onEscape,
 	onOpen,
 	claim,
+	inline = false,
 }: {
 	value: string;
 	onChange: (v: string) => void;
@@ -36,6 +38,9 @@ export function ReadingThinkingField({
 	onOpen?: () => void;
 	/** Primary dictation claim — true while the check is behind its reveal. */
 	claim: boolean;
+	/** Row layout (owner, 2026-10-26): one line beside the side-question
+	 *  field and the check — the label moves into the placeholder. */
+	inline?: boolean;
 }) {
 	useDictationTarget(
 		useCallback(
@@ -49,11 +54,16 @@ export function ReadingThinkingField({
 	return (
 		<div
 			data-testid="reading-thinking-field"
-			className="pointer-events-auto mb-2 rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50"
+			className={cn(
+				"pointer-events-auto rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50",
+				inline ? "flex min-w-0 items-center sm:flex-1 sm:self-stretch" : "mb-2",
+			)}
 		>
-			<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-				Thinking while reading
-			</div>
+			{!inline && (
+				<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					Thinking while reading
+				</div>
+			)}
 			<textarea
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
@@ -94,7 +104,8 @@ export function ReadingThinkingField({
 						e.currentTarget.blur();
 					}
 				}}
-				placeholder="Whatever comes to mind as you read."
+				placeholder={inline ? "Thinking while reading…" : "Whatever comes to mind as you read."}
+				aria-label="Thinking while reading"
 				rows={1}
 				className="field-sizing-content lh-input max-h-40 w-full resize-none bg-transparent py-0.5 outline-none placeholder:text-muted-foreground/70"
 			/>

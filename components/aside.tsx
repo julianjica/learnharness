@@ -67,7 +67,9 @@ export function AsideList({ asides }: { asides: readonly Pick<Aside, "id" | "que
 	);
 }
 
-export function AsideField({ disabled, onAsk }: { disabled: boolean; onAsk: (question: string) => void }) {
+/** Row layout (owner, 2026-10-26): one line beside the reading field and
+ *  the check — `inline` drops the stacked spacing. */
+export function AsideField({ disabled, onAsk, inline = false }: { disabled: boolean; onAsk: (question: string) => void; inline?: boolean }) {
 	const [value, setValue] = useState("");
 	const send = () => {
 		const question = value.trim();
@@ -78,7 +80,10 @@ export function AsideField({ disabled, onAsk }: { disabled: boolean; onAsk: (que
 	return (
 		<div
 			data-testid="aside-field"
-			className="pointer-events-auto mb-2 flex items-end gap-2 rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50"
+			className={cn(
+				"pointer-events-auto flex gap-2 rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50",
+				inline ? "min-w-0 items-center sm:flex-1 sm:self-stretch" : "mb-2 items-end",
+			)}
 		>
 			<textarea
 				value={value}
