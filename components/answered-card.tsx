@@ -6,6 +6,7 @@ import { GlyphMark } from "@/components/ui/glyph-mark";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { cn } from "@/lib/utils";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { AsideList } from "@/components/aside";
 import type { QuestionAnswerData } from "@/src/core";
 import { parseAskInput, parseQuizInput } from "@/src/core";
 
@@ -21,11 +22,18 @@ import { parseAskInput, parseQuizInput } from "@/src/core";
  */
 export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; input?: unknown }) {
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
+	// Side questions asked while this check waited (asides, owner
+	// 2026-10-26): chronologically prior to the answer — above the card,
+	// like the reading channel. Absent on every older record.
+	const asides = Array.isArray(answer.asides) && answer.asides.length > 0 ? <AsideList asides={answer.asides} /> : null;
 	if (answer.dismissed) {
 		return (
+			<>
+			{asides}
 			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
 				<span className="font-medium">{answer.questionText}</span> — skipped
 			</div>
+			</>
 		);
 	}
 
@@ -53,6 +61,7 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 		{answer.readingThinking && (
 			<ThinkingBlock testId="reading-thinking-block" label="YOUR THINKING" text={answer.readingThinking} defaultOpen />
 		)}
+		{asides}
 		{/* [&>*:last-child]:mb-0 (owner round, 2026-10-07): on ask cards the
 		    thinking row is the last child — its my-3 stacked with the card's
 		    p-4 into a 28px void below (12px above); the card's own padding is

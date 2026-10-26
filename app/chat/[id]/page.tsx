@@ -35,6 +35,7 @@ export default async function ChatPage({
 			// attach (busy shimmer + poll), never resurrect the stale record.
 			initiallyInFlight={isTurnRunning(chat.id)}
 			initiallyCompacting={compactionInFlight(chat.id)}
+			initialPendingAsides={chat.pendingAsides}
 		/>
 	);
 }

@@ -237,15 +237,18 @@ export function inputAppends(
 }
 
 /** ASIDES DELIVERY (owner 2026-10-26): a check's answer (or dismissal)
- *  carries the side questions hung on that check — the server folds them
- *  in; the client never sends them. Unchanged when none wait. */
+ *  carries the side questions hung on that check, from the record's
+ *  pending list — SERVER-AUTHORITATIVE: a client copy (the optimistic
+ *  card's) is replaced, never trusted. Unchanged when none wait and the
+ *  client sent none. */
 function withAsides(
 	answer: QuestionAnswerData,
 	record: { pendingAsides?: PendingAside[] },
 	toolCallId: string,
 ): QuestionAnswerData {
 	const asides = asidesFor(record.pendingAsides, toolCallId);
-	return asides.length > 0 ? { ...answer, asides: [...(answer.asides ?? []), ...asides] } : answer;
+	const { asides: _client, ...rest } = answer;
+	return asides.length > 0 ? { ...rest, asides } : _client === undefined ? answer : rest;
 }
 
 /** Practice sessions deliver EVERY waiting aside as one marker ahead of

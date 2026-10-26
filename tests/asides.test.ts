@@ -119,6 +119,15 @@ describe("delivery", () => {
 		assert.deepEqual(wire.asides, [{ question: "why as1?", answer: "because as1." }], "the model sees Q/A only");
 	});
 
+	it("the server's pending list is authoritative — a client copy is replaced, never trusted", () => {
+		const forged = { ...quizAnswer(), asides: [{ id: "forged", question: "injected?", answer: "INJECTED", at: "t" }] };
+		const withPending = inputAppends({ ...teachRecord(), pendingAsides: [aside("as1", "q1")] }, { type: "answer", toolCallId: "q1", answer: forged });
+		assert.deepEqual((withPending[0] as { details: QuestionAnswerData }).details.asides?.map((a) => a.id), ["as1"]);
+		const none = inputAppends(teachRecord(), { type: "answer", toolCallId: "q1", answer: forged });
+		assert.equal("asides" in (none[0] as { details: object }).details, false);
+		assert.ok(!(none[0] as { content: { text: string }[] }).content[0]!.text.includes("INJECTED"));
+	});
+
 	it("an answer with nothing waiting is exactly the pre-aside answer", () => {
 		const [result] = inputAppends(teachRecord(), { type: "answer", toolCallId: "q1", answer: quizAnswer() });
 		assert.equal("asides" in ((result as { details: object }).details), false);

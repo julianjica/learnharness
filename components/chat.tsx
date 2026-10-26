@@ -43,7 +43,12 @@ import {
 	type ChatSettings,
 	type LhMessage,
 	type ModelSlotName,
+	type Aside,
+	type PendingAside,
+	asideAnchorOf,
+	deliveredAsideIds,
 } from "@/src/core";
+import { AsideField, AsideList, AsideThread, useAsides } from "@/components/aside";
 import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
@@ -203,6 +208,7 @@ export function Chat({
 	initiallyCompacting = false,
 	initialConfigured = false,
 	kind = "teach",
+	initialPendingAsides,
 }: {
 	chatId: string;
 	title: string;
@@ -224,6 +230,9 @@ export function Chat({
 	 *  it (BYOK, owner 2026-09-22). The server gate stays the truth; this
 	 *  only decides whether the pill rides the composer. */
 	initialConfigured?: boolean;
+	/** The record's undelivered asides — a reload keeps the side thread
+	 *  of the waiting check/problem (asides, owner 2026-10-26). */
+	initialPendingAsides?: PendingAside[];
 }) {
 	// Reattach plumbing (background-turn runner wave): the hook holds the
 	// settled terminal's callback — a stable ref assigned below, once
@@ -362,6 +371,9 @@ export function Chat({
 	// the plan popup, or the setup dialog over a pending question must not
 	// dismiss the question underneath.
 	const [abortAsk, setAbortAsk] = useState<AbortMode | null>(null);
+	// The side thread's answered asides (assigned below, once useAsides
+	// runs) — the dismissal's optimistic card carries them like the answer's.
+	const asidesSettledRef = useRef<() => Aside[]>(() => []);
 	const abortAskRef = useRef<AbortMode | null>(null);
 	abortAskRef.current = abortAsk;
 	useEffect(() => {
@@ -403,7 +415,8 @@ export function Chat({
 				const question = (p.input as { question?: string } | null)?.question ?? "";
 				const reading = readingThinkingRef.current.trim() || undefined;
 				clearReadingThinking();
-				const answer = dismissedAnswer(toolQuestionKind(p.tool), question);
+				const settledAsides = asidesSettledRef.current();
+				const answer = { ...dismissedAnswer(toolQuestionKind(p.tool), question), ...(settledAsides.length > 0 ? { asides: settledAsides } : {}) };
 				void dismissQuestion(
 					p.toolCallId,
 					reading ? { ...answer, readingThinking: reading } : answer,
@@ -456,6 +469,15 @@ export function Chat({
 
 	const localStream = status === "submitted" || status === "streaming";
 	const busy = localStream || turnInFlight;
+	// THE SIDE THREAD (asides, owner 2026-10-26): open while a teach-phase
+	// question waits or a practice problem is active — never during the
+	// probe. Folded from the native record, the server's own rule.
+	const asideAnchor = useMemo(() => asideAnchorOf({ messages: nativeMessages, kind }), [nativeMessages, kind]);
+	const asides = useAsides(chatId, asideAnchor?.anchorId ?? null, initialPendingAsides);
+	asidesSettledRef.current = asides.settled;
+	// Delivered asides render where they landed (the practice marker) —
+	// the waiting thread drops them so nothing shows twice.
+	const deliveredAsides = useMemo(() => deliveredAsideIds(nativeMessages), [nativeMessages]);
 	const busyRef = useRef(busy);
 	busyRef.current = busy;
 
@@ -1363,6 +1385,8 @@ export function Chat({
 												return <CompactionCutDivider key={pi} data={part.data as CompactionDividerData} />;
 											case "data-practice-thinking":
 												return <ThinkingCard key={pi} data={part.data as PracticeThinkingData} />;
+											case "data-asides":
+												return <AsideList key={pi} asides={(part.data as { asides?: PendingAside[] } | null)?.asides ?? []} />;
 											case "data-practice-next":
 												// The learner's move-on signal (owner round 16): a compact
 												// centered mono-caps line — chrome, the dismissal register.
@@ -1540,6 +1564,11 @@ export function Chat({
 								</Fragment>
 							))}
 
+							{/* The waiting anchor's side thread: settled asides plus the one
+							    streaming now, at the transcript's end — above the dock. Once
+							    delivered they render with their answered card / marker. */}
+							{asideAnchor && <AsideThread thread={asides.thread.filter((a) => !deliveredAsides.has(a.id))} />}
+
 							{/* THE placeholder, ACTION-gated (owner, optimistic round
 							    3, 2026-10-02): spinner + shimmered Thinking… from the
 							    instant of any action that produces tokens — send,
@@ -1605,6 +1634,7 @@ export function Chat({
 					requiresReveal={requiresReveal}
 					readingThinking={readingThinking}
 					onReadingThinking={applyReadingThinking}
+					aside={asideAnchor ? <AsideField disabled={busy || asides.asking || compacting} onAsk={(q) => void asides.ask(q)} /> : undefined}
 					phase={phases.at(-1) ?? "probe"}
 					turns={turns}
 					contextTokens={contextTokens}
@@ -1665,7 +1695,11 @@ export function Chat({
 						// check answer is its only carrier.
 						const reading = readingThinkingRef.current.trim() || undefined;
 						clearReadingThinking();
-						submitAnswer(pending.tool, pending.toolCallId, reading ? { ...output, readingThinking: reading } : output);
+						// The side thread rides too (asides): the optimistic card shows
+						// it at once; the server substitutes its own pending copy.
+						const settledAsides = asides.settled();
+						const withAsides = settledAsides.length > 0 ? { ...output, asides: settledAsides } : output;
+						submitAnswer(pending.tool, pending.toolCallId, reading ? { ...withAsides, readingThinking: reading } : withAsides);
 					}}
 				/>
 				</Conversation>
@@ -1827,6 +1861,7 @@ function DockOverlay({
 	requiresReveal,
 	readingThinking,
 	onReadingThinking,
+	aside,
 	phase,
 	turns,
 	contextTokens,
@@ -1858,6 +1893,9 @@ function DockOverlay({
 	 *  the submit + dismissal seams (outside this overlay) can merge it. */
 	readingThinking: string;
 	onReadingThinking: (v: string) => void;
+	/** The side-question field (asides, owner 2026-10-26) — present while a
+	 *  teach-phase question waits or a practice problem is active. */
+	aside?: React.ReactNode;
 	/** Session phase at the pending question — scales the thinking field. */
 	phase: Phase3;
 	/** The session's usage log — the stats bar beneath the composer folds it. */
@@ -2293,6 +2331,7 @@ function DockOverlay({
 							claim={revealPending}
 						/>
 					)}
+					{aside}
 					<div ref={shellRef} className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
 						<div
 						ref={contentRef}

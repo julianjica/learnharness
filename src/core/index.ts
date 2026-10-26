@@ -80,3 +80,5 @@ export * from "./coverage.ts";
 // ONE session→markdown formatter — the extractor's view and the user-facing
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
+// Asides (owner 2026-10-26): the side thread's anchor + delivery folds.
+export * from "./asides.ts";
