@@ -8,6 +8,15 @@
  * golden pre-aside records produce byte-identical view, markdown, wire,
  * model-facing answers and cost as the pre-feature build did
  * (tests/fixtures/asides-compat.json was recorded from that build).
+ *
+ * Re-recording asides-compat.json: it holds SHA-256 hashes of the five
+ * folds computed in the "compatibility with previous saves" suite below —
+ * projectView, sessionMarkdown, toLlmMessages(asAgentMessages), the
+ * model-facing compactAnswerForModel of every answered question, and
+ * sessionCost — hashed over the string (markdown) or its JSON. An
+ * INTENTIONAL view/markdown/wire/answer/cost format change re-records
+ * them in the same commit (the golden-fixture discipline); an
+ * unintentional one fails here.
  */
 
 import assert from "node:assert/strict";

@@ -17,7 +17,7 @@ const answer = (extra: Partial<QuestionAnswerData> = {}): QuestionAnswerData =>
 describe("Aside blocks", () => {
 	it("show the kicker, the question, and the answer as prose", () => {
 		const html = renderToStaticMarkup(<AsideBlock aside={asides[0]!} />);
-		assert.match(html, /Aside · /);
+		assert.match(html, /Aside<span> · \d/);
 		assert.match(html, /why does it flip\?/);
 		assert.match(html, /data-testid="aside-answer"/);
 	});

@@ -31,7 +31,10 @@ export function AsideBlock({ aside, streaming = false, error }: { aside: Pick<As
 	return (
 		<div data-testid="aside-block" className="rounded-lg border-l-2 border-primary/40 bg-card/60 px-4 py-3 text-sm">
 			<div className="pb-1.5 font-ui text-xs font-medium uppercase tracking-wide text-muted-foreground">
-				Aside{time ? ` · ${time}` : ""}
+				Aside
+				{/* The locale time differs between the server render and the
+				    browser (timezone/locale) — React's timestamp escape hatch. */}
+				<span suppressHydrationWarning>{time ? ` · ${time}` : ""}</span>
 			</div>
 			<div data-testid="aside-question" className="pb-2 text-foreground/80 italic">
 				{aside.question}
