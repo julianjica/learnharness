@@ -82,7 +82,7 @@ export function AsideField({ disabled, onAsk, inline = false }: { disabled: bool
 			data-testid="aside-field"
 			className={cn(
 				"pointer-events-auto flex gap-2 rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50",
-				inline ? "min-w-0 items-center sm:flex-1 sm:self-stretch" : "mb-2 items-end",
+				inline ? "min-w-0 items-center @[44rem]:flex-1 @[44rem]:self-stretch" : "mb-2 items-end",
 			)}
 		>
 			<textarea

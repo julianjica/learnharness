@@ -2305,7 +2305,7 @@ function DockOverlay({
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
+			<div ref={blockRef} className="@container relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
 				<div className={DOCK}>
 					{setupCta}
 					{/* The queued-steer indicator (owner spec 2026-10-03): quiet
@@ -2320,7 +2320,20 @@ function DockOverlay({
 					    line below the fields. Narrow windows stack. One container
 					    for every state, so the fields never remount and drafts
 					    survive opening the check. */}
-					<div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+					<div
+						className={cn(
+							// The row breakpoint is the BAND's width (container query),
+							// not the window's — beside the sidebar a wide window can
+							// still leave too little room for three across.
+							"flex flex-col gap-2 @[44rem]:flex-row @[44rem]:flex-wrap @[44rem]:items-end",
+							// Closed check: the row spans the lesson column (the band's
+							// container width minus the column's px-6), so a few words
+							// don't wrap and grow the fields upward (owner, 2026-10-26).
+							// Open: back to the dock width — the plan marginalia owns
+							// the flank then.
+							sideRow && !expanded && "@[44rem]:relative @[44rem]:left-1/2 @[44rem]:w-[max(100%,calc(100cqw-3rem))] @[44rem]:-translate-x-1/2",
+						)}
+					>
 					{/* The reading-thinking field (owner 2026-10-03): mounted while a
 					    teach-phase check waits — the same cue that collapses it. It
 					    claims dictated speech until the learner reveals the check
@@ -2348,7 +2361,9 @@ function DockOverlay({
 						ref={shellRef}
 						className={cn(
 							"pointer-events-auto min-w-0 overflow-hidden rounded-2xl border bg-card shadow-lg",
-							sideRow && !expanded ? "sm:flex-[1.6]" : "sm:basis-full",
+							// Closed: a fixed width that fits "Check your understanding";
+							// the fields share the rest.
+							sideRow && !expanded ? "@[44rem]:w-[19rem] @[44rem]:flex-none" : "@[44rem]:basis-full",
 						)}
 					>
 						<div

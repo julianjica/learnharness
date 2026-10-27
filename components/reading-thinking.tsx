@@ -56,7 +56,7 @@ export function ReadingThinkingField({
 			data-testid="reading-thinking-field"
 			className={cn(
 				"pointer-events-auto rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50",
-				inline ? "flex min-w-0 items-center sm:flex-1 sm:self-stretch" : "mb-2",
+				inline ? "flex min-w-0 items-center @[44rem]:flex-1 @[44rem]:self-stretch" : "mb-2",
 			)}
 		>
 			{!inline && (
