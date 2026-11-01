@@ -29,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 			    empty when absent; its rules scope to html.dark so they win
 			    over globals.css whatever the load order. */}
 			<head>
+				{/* A runtime file outside the bundle — it can't be an import. */}
+				{/* eslint-disable-next-line @next/next/no-css-tags */}
 				<link rel="stylesheet" href="/api/theme.css" />
 			</head>
 			<body className="min-h-dvh antialiased">
