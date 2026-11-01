@@ -46,3 +46,4 @@ export * from "./model-catalog.ts";
 export { sessionCost } from "./pricing.ts";
 export { planLimits } from "../agent/plan-limits.ts";
 export { handleAsideRequest, asideRuntime } from "./aside.ts";
+export { readLocalTheme } from "./theme.ts";

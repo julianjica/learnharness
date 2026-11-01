@@ -112,6 +112,15 @@ export const GRAPH_FORMAT_FILE = path.join(PATHS.graph, "format.json");
 export const SETTINGS_FILE = path.join(DATA_ROOT, "settings.json");
 
 /**
+ * The optional local theme (owner, 2026-11-01): a CSS file the user keeps
+ * in their data dir — never in the repo — served by GET /api/theme.css and
+ * linked from the root layout. Absent = an empty stylesheet. Lets a
+ * licensed palette (e.g. a paid editor theme) restyle a personal install
+ * without being redistributed with the source.
+ */
+export const THEME_FILE = path.join(DATA_ROOT, "theme.css");
+
+/**
  * User prompt-override files (settings-storage wave, 2026-09-19): the
  * per-segment system-prompt overrides mirroring the SOURCE layout
  * (src/agent/prompts/) — the shared base as prompts/system-prompt.md,

@@ -552,6 +552,7 @@ Every place the architecture is designed to be cut — the "one file" a future c
 | Agent construction (tests) | `handleChatRequest(req, buildAgent?)` | scripted engines, no refactor |
 | Sub-agent verification | `sub-agents/headless.ts` (`headlessOverride`) | demo/SVG verification, no Chrome |
 | Data location (Electron) | `LH_DATA_DIR` env (`config.ts` PATHS) | where data/ lives, nothing else |
+| Local theme (owner, 2026-11-01) | `data/theme.css` (`config.ts` THEME_FILE) via `GET /api/theme.css`, linked in `app/layout.tsx` | the palette of one install — rules scoped to `html.dark` override the globals.css tokens; absent = empty stylesheet. Lives in the gitignored data dir so a licensed palette is never redistributed |
 | Desktop host | `electron/main.cjs` | launcher/security shell only |
 
 ---

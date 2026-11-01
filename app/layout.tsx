@@ -25,6 +25,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" className={`dark ${ui.variable} ${prose.variable}`}>
+			{/* The optional local theme (data/theme.css, config.ts THEME_FILE):
+			    empty when absent; its rules scope to html.dark so they win
+			    over globals.css whatever the load order. */}
+			<head>
+				<link rel="stylesheet" href="/api/theme.css" />
+			</head>
 			<body className="min-h-dvh antialiased">
 			{/* The notification channel rides OUTSIDE everything: sidebar, dock,
 				 and pages all subscribe as the polls retire (push S3, 2026-10-02). */}
