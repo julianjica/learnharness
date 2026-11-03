@@ -60,11 +60,13 @@ export function ProblemCard({ part }: ArtifactPartProps) {
 	// statement — same container + eyebrow discipline as the answered card
 	// and the dock (which mirrors this in Slice D). The commitment never
 	// renders — only the call's statement.
-	const input = (part.input ?? {}) as { statement?: string };
+	const input = (part.input ?? {}) as { statement?: string; label?: string };
 	const statement = typeof input.statement === "string" ? input.statement : "";
+	// A guide's part carries its own label ("Problem 2(a)", 2026-11-03).
+	const eyebrow = typeof input.label === "string" && input.label.trim() ? input.label.trim() : "Problem";
 	return (
 		<div data-testid="problem-card" className="lh-card-enter my-1 rounded-xl border bg-card p-4">
-			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</div>
 			<div className="lh-prose text-[15px]">
 				<MessageResponse>{repairMathForDisplay(statement)}</MessageResponse>
 			</div>

@@ -69,8 +69,9 @@ export async function startDraftSession(
 
 /**
  * The guide draft's start (guiding sessions, owner 2026-11-03): create the
- * kind:"guide" session, upload each attached PDF on its own request, start
- * the intake (the transcription job), then hand back the push target. The
+ * kind:"guide" session, upload each attached PDF on its own request, then
+ * hand back the push target. The first turn starts the intake (the
+ * transcription job) once the opening message is on disk. The
  * attached files are named in the first message so the guide knows a
  * transcription is coming. Throws with the server's reason when an upload
  * is refused (the session exists by then; its record shows what landed).
@@ -92,13 +93,13 @@ export async function startGuideSession(
 	for (const file of files) {
 		const form = new FormData();
 		form.append("file", file, file.name);
+		form.append("size", String(file.size));
 		const up = await fetchLike(`/api/chats/${id}/attachments`, { method: "POST", body: form });
 		if (!up.ok) {
 			const body = (await up.json().catch(() => null)) as { error?: string } | null;
 			throw new Error(body?.error ?? `Uploading ${file.name} failed (${up.status}).`);
 		}
 	}
-	if (files.length > 0) await fetchLike(`/api/chats/${id}/intake`, { method: "POST" });
 	const prompt = files.length > 0 ? `${goal}\n\nAttached: ${files.map((f) => f.name).join(", ")}` : goal;
 	return `/chat/${id}?prompt=${encodeURIComponent(prompt)}`;
 }

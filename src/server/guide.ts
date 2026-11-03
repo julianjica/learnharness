@@ -2,9 +2,10 @@
  * Guiding sessions — the server side of attachments and intake (owner
  * design 2026-11-03). A guide is created like any session (POST
  * /api/chats, kind "guide"); then the client uploads each attached PDF
- * on its own request (each body stays under the proxy's buffer cap)
- * and asks for the intake: one transcribe job over every file, whose
- * steer wakes the guide with the problem set.
+ * on its own request (each body stays under the proxy's buffer cap).
+ * The first turn starts the intake (chat-handler ensureGuideIntake): one
+ * transcribe job over every file, whose steer wakes the guide with the
+ * problem set.
  *
  * Files live at data/attachments/<chatId>/ and die with the session
  * (deleteChatSession calls removeAttachments).
@@ -13,7 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { intakeCallId, type ChatAttachment } from "../core/contracts.ts";
-import { spawnLessonJob } from "./chat-handler.ts";
+import { ensureGuideIntake } from "./chat-handler.ts";
 import { stores } from "./stores.ts";
 
 /** Owner-approved limits (plan 2026-11-03). */
@@ -68,21 +69,14 @@ export function addAttachment(chatId: string, originalName: string, bytes: Uint8
 	return attachment;
 }
 
-/** Start the intake: one transcribe job over every attached file.
- *  Idempotent (the intake call id keys the job). Null when nothing is
- *  attached — a typed-in problem set needs no intake. */
+/** Start the intake explicitly (POST …/intake). The turn handler starts
+ *  it on its own once the opening message is on disk; this is the same
+ *  idempotent call. Null when nothing is attached. */
 export function startIntake(chatId: string): { jobId: string } | null {
 	const record = stores.chatStore.getChat(chatId);
 	if (!record) throw new AttachmentError("Unknown chat", 404);
 	if (record.kind !== "guide") throw new AttachmentError("Intake belongs to guiding sessions", 400);
-	const files = (record.attachments ?? []).map(({ name, path: filePath }) => ({ name, path: filePath }));
-	if (files.length === 0) return null;
-	const toolCallId = intakeCallId(chatId);
-	const existing = stores.jobStore.findJobByToolCallId(chatId, toolCallId);
-	if (existing) return { jobId: existing.id };
-	const job = stores.jobStore.createJob({ kind: "transcribe", chatId, toolCallId });
-	spawnLessonJob(job.id, { files });
-	return { jobId: job.id };
+	return ensureGuideIntake(chatId);
 }
 
 /** Remove a session's attachment folder (session deletion). */

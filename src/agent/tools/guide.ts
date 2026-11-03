@@ -41,6 +41,10 @@ export const guideProblemInputObject = Type.Object({
 		description:
 			"REQUIRED — the part exactly as the problem set words it (markdown + LaTeX), with just enough of the problem's shared setup to stand alone. Never reworded.",
 	}),
+	lastPart: Type.Boolean({
+		description:
+			"REQUIRED — true when this is the problem's final part (or the problem has no parts); false while more parts of the same problem follow. The map marks the problem done when its final part concludes.",
+	}),
 	modelSolution: Type.String({
 		description:
 			"REQUIRED — your full worked solution to this part, committed BEFORE the learner sees it. Hidden until you conclude or the learner presses Show solution; it is then shown verbatim.",

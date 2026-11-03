@@ -62,13 +62,13 @@ const TREE: PlanTree = {
 } as PlanTree;
 
 function call(id: string, name: string, args: Record<string, unknown>, isError = false): LhMessage[] {
-	const assistant: LhMessage & AssistantMessage = { id: `a_${id}`, role: "assistant", content: [{ type: "toolCall", id, name, arguments: args }], timestamp: 1, ...STAMPS };
+	const assistant: LhMessage & AssistantMessage = { id: `a_${id}`, role: "assistant", content: [{ type: "toolCall", id, name, arguments: args as never }], timestamp: 1, ...STAMPS };
 	const result: LhMessage & ToolResultMessage = { id: `r_${id}`, role: "toolResult", toolCallId: id, toolName: name, content: [{ type: "text", text: "ok" }], details: null, isError, timestamp: 2 };
 	return [assistant, result];
 }
 
-const pose = (id: string, nodeId: string, label = "Problem 1(a)") =>
-	call(id, PRACTICE_PROBLEM_TOOL, { label, nodeId, statement: `${label} statement`, modelSolution: `${label} solution` });
+const pose = (id: string, nodeId: string, label = "Problem 1(a)", lastPart = true) =>
+	call(id, PRACTICE_PROBLEM_TOOL, { label, nodeId, lastPart, statement: `${label} statement`, modelSolution: `${label} solution` });
 const conclude = (id: string, outcome: string) => call(id, PRACTICE_CONCLUDE_TOOL, { outcome, verdict: "v", rung: null, missClass: null, retest: false });
 const record = (messages: LhMessage[], kind = "guide") => ({ messages, kind });
 
@@ -146,13 +146,10 @@ describe("Show solution (reveal-problem)", () => {
 // ─── the map ────────────────────────────────────────────────────────────────
 
 describe("problem nodes turn done", () => {
-	it("native fold: solved parts → solved; an open part keeps the node current", () => {
-		const messages = [
-			...call("q1", "quiz", { nodeId: "markov" }),
-			...pose("call_a", "p1"),
-			...conclude("c_a", "solved"),
-			...pose("call_b", "p1", "Problem 1(b)"),
-		];
+	it("native fold: solved parts → solved; never done before the last part", () => {
+		const first = [...call("q1", "quiz", { nodeId: "markov" }), ...pose("call_a", "p1", "Problem 1(a)", false), ...conclude("c_a", "solved")];
+		assert.equal(derivePlanStatusesLh(TREE, first).done.has("p1"), false, "1(a) concluded, but 1(b) is still to come");
+		const messages = [...first, ...pose("call_b", "p1", "Problem 1(b)")];
 		let s = derivePlanStatusesLh(TREE, messages);
 		assert.equal(s.done.has("p1"), false, "1(b) is still open");
 		assert.equal(derivedNodeStatus(s, "p1"), "current");
@@ -200,7 +197,7 @@ describe("guide tools", () => {
 			spawn: () => {},
 		};
 	}
-	const args = { label: "Problem 1(a)", nodeId: "p1", statement: "s", modelSolution: "m" };
+	const args = { label: "Problem 1(a)", nodeId: "p1", lastPart: true, statement: "s", modelSolution: "m" };
 
 	it("carry the teacher's set plus problem/conclude", () => {
 		const tools = guideTools(ctxWith([], TREE));

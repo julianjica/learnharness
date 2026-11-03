@@ -58,7 +58,7 @@ import {
 	parseChatInput,
 	type TurnInput,
 } from "../core/input-events.ts";
-import { steerDelivered } from "../core/contracts.ts";
+import { intakeCallId, steerDelivered } from "../core/contracts.ts";
 import type {CallUsage, SteerMessage} from "../core/contracts.ts";
 
 /**
@@ -142,6 +142,22 @@ function resolveEngine(role: ModelRole): PiEngine | undefined {
 }
 
 setJobRespawn((jobId) => void jobRunner.runJob(jobId));
+
+/** Start a guiding session's intake — one transcribe job over every
+ *  attached file (src/server/guide.ts has the storage side). Idempotent:
+ *  the intake call id keys the job. Null when nothing is attached. */
+export function ensureGuideIntake(chatId: string): { jobId: string } | null {
+	const record = stores.chatStore.getChat(chatId);
+	if (!record || record.kind !== "guide") return null;
+	const files = (record.attachments ?? []).map(({ name, path }) => ({ name, path }));
+	if (files.length === 0) return null;
+	const toolCallId = intakeCallId(chatId);
+	const existing = stores.jobStore.findJobByToolCallId(chatId, toolCallId);
+	if (existing) return { jobId: existing.id };
+	const job = stores.jobStore.createJob({ kind: "transcribe", chatId, toolCallId });
+	void jobRunner.runJob(job.id, { files });
+	return { jobId: job.id };
+}
 
 /** The lesson's job runner, for jobs a side turn dispatches (asides,
  *  src/server/aside.ts) — one runner, one delivery path. */
@@ -329,6 +345,11 @@ export async function handleChatInput(
 	} catch (err) {
 		console.error(`[chat ${chatId}] write-ahead persist failed:`, err);
 	}
+	// A guide's intake starts once the learner's opening message is on disk
+	// (2026-11-03): an intake that fails at once (no reader model, a bad
+	// file) then steers in AFTER the goal, never onto an empty record.
+	// Idempotent — later turns find the job.
+	if (record.kind === "guide") ensureGuideIntake(chatId);
 
 	// MONEY CHANNEL (wave 4): one collector per request, fed by the agent's
 	// message_end events. Every model call's usage lands in the chat record's

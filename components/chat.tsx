@@ -539,7 +539,9 @@ export function Chat({
 	// A pending question can never precede its phase's seam in the transcript (the teacher's turn
 	// ends at the question call), so the session's current phase IS the
 	// question's phase.
-	const requiresReveal = pending !== null && questionNeedsReveal(pending.tool, pending.input, phaseAt3(messages));
+	// A guide has no probe phase (2026-11-03): every check is a teach-phase
+	// check, collapsed behind the reveal like the teacher's.
+	const requiresReveal = pending !== null && questionNeedsReveal(pending.tool, pending.input, kind === "guide" ? "teach" : phaseAt3(messages));
 
 	/* The READING-THINKING channel (owner 2026-10-03): a draft field for
 	 * thinking while reading the teaching prose, mounted while a check waits
@@ -574,7 +576,7 @@ export function Chat({
 	// The phase at every message (one linear fold): the transcript draws a
 	// color-coded dotted divider at each boundary; the header chip reads the
 	// session's current phase.
-	const phases = useMemo(() => phaseTimeline(messages), [messages]);
+	const phases = useMemo<Phase3[]>(() => (kind === "guide" ? messages.map(() => "teach") : phaseTimeline(messages)), [messages, kind]);
 
 	const [text, setText] = useState("");
 	/* The composer's value MIRROR ("nothing gets lost" round, owner

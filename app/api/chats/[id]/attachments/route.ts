@@ -17,8 +17,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 	}
 	const file = form.get("file");
 	if (!(file instanceof File)) return Response.json({ error: 'Missing the "file" field' }, { status: 400 });
+	const bytes = new Uint8Array(await file.arrayBuffer());
+	// The proxy truncates bodies past its buffer cap SILENTLY (the head —
+	// and so the PDF magic bytes — survive): the client's declared size is
+	// the only way a cut upload becomes an honest error.
+	const declared = Number(form.get("size"));
+	if (Number.isFinite(declared) && declared > 0 && declared !== bytes.byteLength) {
+		return Response.json({ error: `${file.name} arrived incomplete — try again, or restart the app if it keeps happening` }, { status: 400 });
+	}
 	try {
-		const attachment = addAttachment(id, file.name, new Uint8Array(await file.arrayBuffer()));
+		const attachment = addAttachment(id, file.name, bytes);
 		return Response.json({ attachment });
 	} catch (err) {
 		if (err instanceof AttachmentError) return Response.json({ error: err.message }, { status: err.status });

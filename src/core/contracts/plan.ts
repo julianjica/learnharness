@@ -76,8 +76,8 @@ export interface DerivedPlanStatuses {
 	current: string | null;
 	/** Nodes referenced by earlier tagged calls — been there, monotonic. */
 	visited: ReadonlySet<string>;
-	/** Guiding sessions (2026-11-03): problem nodes every posed part of
-	 *  which has concluded, with how they ended. The ONE completion signal
+	/** Guiding sessions (2026-11-03): problem nodes whose final part
+	 *  (`lastPart`) has concluded with nothing open, with how they ended. The ONE completion signal
 	 *  on the map, and it reads conclusions, never checks. Empty
 	 *  elsewhere (practice problems carry no nodeId). */
 	done: ReadonlyMap<string, PlanProblemOutcome>;
@@ -128,32 +128,38 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 
 /** The guide's problem-node fold: parts pose against a problem node
  *  (`nodeId`), one at a time; a conclusion closes the open one. A node is
- *  done when it has concluded parts and none open. */
+ *  done once the part posed as its LAST (`lastPart: true`, owner
+ *  2026-11-03) has concluded and nothing on it is open — so a problem
+ *  never flips done between its parts. */
 class ProblemFold {
-	private open: string | null = null;
+	private open: { nodeId: string; last: boolean } | null = null;
 	private outcomes = new Map<string, string[]>();
 	private openNodes = new Set<string>();
+	private finished = new Set<string>();
 	pose(input: unknown, ids: ReadonlySet<string>): string | null {
-		const nodeId = (input as { nodeId?: unknown } | undefined)?.nodeId;
+		const args = input as { nodeId?: unknown; lastPart?: unknown } | undefined;
+		const nodeId = args?.nodeId;
 		if (typeof nodeId !== "string" || !ids.has(nodeId)) {
 			this.open = null;
 			return null;
 		}
-		this.open = nodeId;
+		this.open = { nodeId, last: args?.lastPart === true };
 		this.openNodes.add(nodeId);
 		return nodeId;
 	}
 	conclude(input: unknown): void {
 		if (!this.open) return;
+		const { nodeId, last } = this.open;
 		const outcome = (input as { outcome?: unknown } | undefined)?.outcome;
-		this.outcomes.set(this.open, [...(this.outcomes.get(this.open) ?? []), typeof outcome === "string" ? outcome : ""]);
-		this.openNodes.delete(this.open);
+		this.outcomes.set(nodeId, [...(this.outcomes.get(nodeId) ?? []), typeof outcome === "string" ? outcome : ""]);
+		this.openNodes.delete(nodeId);
+		if (last) this.finished.add(nodeId);
 		this.open = null;
 	}
 	done(): Map<string, PlanProblemOutcome> {
 		const out = new Map<string, PlanProblemOutcome>();
 		for (const [nodeId, list] of this.outcomes) {
-			if (this.openNodes.has(nodeId)) continue;
+			if (this.openNodes.has(nodeId) || !this.finished.has(nodeId)) continue;
 			out.set(
 				nodeId,
 				list.includes("revealed") ? "viewed" : list.every((o) => o === "solved" || o === "solvedWithHints") ? "solved" : "ended",
