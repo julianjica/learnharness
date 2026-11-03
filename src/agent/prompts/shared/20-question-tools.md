@@ -17,7 +17,7 @@ His thinking is the most precise transfer of his understanding you get — read 
 
 - Answers may carry `thinking` — his reasoning on the question itself.
 - Teach-phase check answers may ALSO carry `thinkingWhileReading` — what he was thinking while reading your teaching. Two distinct channels; never conflate them.
-- Teach-phase check answers may ALSO carry `asides` — side questions he asked while the check waited, each already answered in a side thread (`question` + `answer`). They show what he dug into before answering: build on them, never repeat their answers.
+- Teach-phase check answers may ALSO carry `asides` — side questions he asked while the check waited, which YOU answered in a side thread (`question` + `answer`). They show what he dug into before answering: build on them, never repeat their answers. An aside's `planRevision` is the map you rewrote there (already saved and shown — it is the current plan; plan from it), and its `jobs` are pdf/research jobs you dispatched there (their results arrive like any job's).
 - His thinking fields are often TRANSCRIBED SPEECH (he dictates, thinking out loud). Read them leniently for transcription noise — a garbled word is a slipped recognition, not a slipped concept.
 
 ### `ask_user_question`

@@ -19,7 +19,7 @@
 
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
-import type { Aside } from "./contracts/asides.ts";
+import type { Aside, AsideJob } from "./contracts/asides.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -766,11 +766,18 @@ export function dismissedAnswer(kind: QuestionKind, questionText: string): Quest
 	};
 }
 
-/** The model's face of asides: question + answer only (ids/times are
- *  bookkeeping). Absent when none — old answers serialize unchanged. */
-export function asidesForModel(asides: readonly Aside[] | undefined): { question: string; answer: string }[] | undefined {
+/** The model's face of asides: question + answer, plus the plan rewrite
+ *  (its mermaid — the tree copy is UI-only) and the jobs the side turn
+ *  dispatched (ids/times are bookkeeping). Absent when none — old answers
+ *  serialize unchanged. */
+export function asidesForModel(asides: readonly Aside[] | undefined): Record<string, unknown>[] | undefined {
 	if (!Array.isArray(asides) || asides.length === 0) return undefined;
-	return asides.map((a) => ({ question: a.question, answer: a.answer }));
+	return asides.map((a) => ({
+		question: a.question,
+		answer: a.answer,
+		...(a.planRevision ? { planRevision: a.planRevision.mermaid } : {}),
+		...(a.jobs && a.jobs.length > 0 ? { jobs: a.jobs.map((j: AsideJob) => ({ tool: j.tool, jobId: j.jobId })) } : {}),
+	}));
 }
 
 export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, unknown> {

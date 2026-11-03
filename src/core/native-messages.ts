@@ -263,7 +263,12 @@ export function newThinkingMessage(problemCallId: string, text: string): LhMarke
  *  model reads the header + Q/A pairs; the transcript renders the Aside
  *  blocks off `details.asides`. */
 export function newAsidesMessage(asides: readonly Aside[]): LhMarkerMessage {
-	const pairs = asides.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
+	const pairs = asides
+		.map((a) => {
+			const jobs = a.jobs && a.jobs.length > 0 ? `\nDispatched: ${a.jobs.map((j) => `${j.tool} (${j.jobId})`).join(", ")}` : "";
+			return `Q: ${a.question}\nA: ${a.answer}${jobs}`;
+		})
+		.join("\n\n");
 	return {
 		id: newMessageId(),
 		role: "custom",

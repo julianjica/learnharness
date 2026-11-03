@@ -142,6 +142,12 @@ function resolveEngine(role: ModelRole): PiEngine | undefined {
 
 setJobRespawn((jobId) => void jobRunner.runJob(jobId));
 
+/** The lesson's job runner, for jobs a side turn dispatches (asides,
+ *  src/server/aside.ts) — one runner, one delivery path. */
+export function spawnLessonJob(jobId: string, input: unknown): void {
+	void jobRunner.runJob(jobId, input as never);
+}
+
 /** The route-facing entry: parse {chatId, input} and run one turn. */
 export async function handleChatRequest(
 	req: Request,

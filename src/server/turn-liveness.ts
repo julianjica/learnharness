@@ -58,6 +58,23 @@ export function endTurn(chatId: string): void {
 	if (inFlight.delete(chatId)) emit("turn-settled", { chatId });
 }
 
+/**
+ * The side turn's claim (asides, owner 2026-11-03): the same in-flight
+ * slot — a check answer 409s and steers stay queued while the teacher
+ * answers a side question — but SILENT. A side turn has no turn stream,
+ * so announcing it would send other views to reattach to nothing; the
+ * asking view gates its own dock. Released by endQuietTurn, also silent.
+ */
+export function beginQuietTurn(chatId: string): boolean {
+	if (isTurnRunning(chatId)) return false;
+	inFlight.set(chatId, Date.now());
+	return true;
+}
+
+export function endQuietTurn(chatId: string): void {
+	inFlight.delete(chatId);
+}
+
 /** True while the chat's turn is in flight; lazily evicts stale entries.
  * The eviction path is DELIBERATELY event-free: it is a leak guard for a
  * turn whose onFinish never fired (itself pathological), it runs lazily
