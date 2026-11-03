@@ -21,6 +21,7 @@ import {
 	newAnswerResult,
 	newNextMessage,
 	newProblemDismissedMarker,
+	newProblemRevealedMarker,
 	newThinkingMessage,
 	newUserMessage,
 	projectView,
@@ -724,6 +725,27 @@ export class SessionModel {
 				body: JSON.stringify({ input: { type: "dismiss-problem", problemCallId } }),
 			});
 			if (!res.ok) throw new Error(`The dismissal failed (${res.status}).`);
+		} catch (err) {
+			this.setError((err as Error).message);
+		}
+	}
+
+	/** "Show solution" (guiding sessions, owner 2026-11-03): the reveal
+	 *  marker lands optimistically — the committed solution renders at
+	 *  once — then the SILENT route persists it (no turn, no wake). The
+	 *  model learns of it with the learner's next input. */
+	async revealProblem(problemCallId: string): Promise<void> {
+		if (!this.readyRef) return;
+		this.mutate(() => {
+			this.tail = [...this.tail, { ...newProblemRevealedMarker(problemCallId), id: localId() }];
+		});
+		try {
+			const res = await this.fetch(`/api/chats/${this.chatId}/dismiss`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ input: { type: "reveal-problem", problemCallId } }),
+			});
+			if (!res.ok) throw new Error(`Showing the solution failed (${res.status}).`);
 		} catch (err) {
 			this.setError((err as Error).message);
 		}

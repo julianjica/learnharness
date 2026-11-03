@@ -78,6 +78,8 @@ const OUTCOME_LABEL: Record<string, string> = {
 	movedOn: "Moved on",
 	surrendered: "Surrendered",
 	dismissed: "Dismissed",
+	// Guiding sessions: the learner pressed Show solution.
+	revealed: "Solution viewed",
 };
 
 /* The outcome chips (owner round 3, 2026-10-05): the EXACT register of the
@@ -91,6 +93,7 @@ const OUTCOME_CHIP: Record<string, string> = {
 	movedOn: "bg-muted text-muted-foreground",
 	surrendered: "bg-red-500/15 text-red-500",
 	dismissed: "bg-muted text-muted-foreground",
+	revealed: "bg-muted text-muted-foreground",
 };
 
 export function ConcludeCard({ part }: ArtifactPartProps) {

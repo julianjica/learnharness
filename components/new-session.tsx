@@ -11,7 +11,7 @@ import { SetupDialog } from "@/components/setup-dialog";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { StatsBar } from "@/components/stats-bar";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
-import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
+import { AttachPdfsControl, ComposerActions, NodePickerControl, addGuideFiles } from "@/components/composer-actions";
 import type { ChatSettings, GraphSnapshot } from "@/src/core";
 
 /** The draft's pick set (owner round 10): the SAME shape the home pick
@@ -67,6 +67,42 @@ export async function startDraftSession(
 	return `/chat/${id}?prompt=${encodeURIComponent(t)}`;
 }
 
+/**
+ * The guide draft's start (guiding sessions, owner 2026-11-03): create the
+ * kind:"guide" session, upload each attached PDF on its own request, start
+ * the intake (the transcription job), then hand back the push target. The
+ * attached files are named in the first message so the guide knows a
+ * transcription is coming. Throws with the server's reason when an upload
+ * is refused (the session exists by then; its record shows what landed).
+ */
+export async function startGuideSession(
+	text: string,
+	files: readonly File[],
+	fetchLike: typeof fetch,
+): Promise<string | null> {
+	const t = text.trim();
+	if (!t && files.length === 0) return null;
+	const goal = t || "Help me work through the attached problem set.";
+	const res = await fetchLike("/api/chats", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ title: goal, kind: "guide" }),
+	});
+	const { id } = (await res.json()) as { id: string };
+	for (const file of files) {
+		const form = new FormData();
+		form.append("file", file, file.name);
+		const up = await fetchLike(`/api/chats/${id}/attachments`, { method: "POST", body: form });
+		if (!up.ok) {
+			const body = (await up.json().catch(() => null)) as { error?: string } | null;
+			throw new Error(body?.error ?? `Uploading ${file.name} failed (${up.status}).`);
+		}
+	}
+	if (files.length > 0) await fetchLike(`/api/chats/${id}/intake`, { method: "POST" });
+	const prompt = files.length > 0 ? `${goal}\n\nAttached: ${files.map((f) => f.name).join(", ")}` : goal;
+	return `/chat/${id}?prompt=${encodeURIComponent(prompt)}`;
+}
+
 /** The pure shell (no router) — the render-test seam: the draft view's
  *  visible surface, assembled from the same pieces a fresh chat shows. */
 /* FINISH-FIRST SEND + RUN-END FOCUS live in the shell (it owns the
@@ -83,6 +119,8 @@ export function DraftShell({
 	onOpenPicker,
 	onClearPicks,
 	overlay,
+	attach,
+	attachCount = 0,
 }: {
 	busy: boolean;
 	text: string;
@@ -90,8 +128,11 @@ export function DraftShell({
 	onSend: () => void;
 	/** The practice draft (owner, 2026-10-04): ?mode=practice — the
 	 *  created session carries kind:"practice" and the copy changes
-	 *  (the practice agent opens; no probing). */
-	mode?: "teach" | "practice";
+	 *  (the practice agent opens; no probing). "guide" (2026-11-03): the
+	 *  guide draft — the attach control rides the action row. */
+	mode?: "teach" | "practice" | "guide";
+	/** The guide draft's attach control (rendered in the action row). */
+	attach?: ReactNode;
 	/** The first-run CTA (fix wave chunk B): the same "Set up your models"
 	 *  affordance home carries, rendered above the draft shell — passed by
 	 *  NewSession, which owns the configured state and the SetupDialog. */
@@ -109,6 +150,8 @@ export function DraftShell({
 	 *  the graph view (the overlay fills its column, never the sidebar).
 	 *  Passed as a node so the pick state stays in NewSession. */
 	overlay?: ReactNode;
+	/** How many files the guide draft holds (a files-only send is fine). */
+	attachCount?: number;
 }) {
 	// Voice dictation (STT wave, 2026-09-17): finals append at the end of the
 	// draft text (via the parent's onChange — the truth lives there); the
@@ -126,7 +169,7 @@ export function DraftShell({
 	// round, owner 2026-10-01): the spoken text is deferred in the run's
 	// buffer — Enter must reach the finish-first send, not be gated out by
 	// an empty textarea. Nothing said → the send no-ops.
-	const canSend = text.trim().length > 0 || dictation.active;
+	const canSend = text.trim().length > 0 || dictation.active || (mode === "guide" && attach != null && attachCount > 0);
 	/* FINISH DICTATION FIRST (owner, 2026-10-01): stop the run, let the
 	 * last finals land through onChange, THEN call the parent's send —
 	 * which reads its REF mirror, so the post-await timing of React's
@@ -172,11 +215,13 @@ export function DraftShell({
 						<Conversation className="h-full min-w-0 flex-1" initial="instant">
 							<ConversationContent className="min-h-full gap-0 p-0">
 								<ConversationEmptyState
-									title={mode === "practice" ? "New practice session" : "New session"}
+									title={mode === "practice" ? "New practice session" : mode === "guide" ? "New guiding session" : "New session"}
 									description={
 										mode === "practice"
 											? "Pick nodes from your knowledge graph, describe what you want to practice, or bring your own problem."
-											: "The teacher will open by probing what you already know."
+											: mode === "guide"
+												? "Attach your problem set, or type the problems, and say what you're aiming for. The guide checks what each problem needs and teaches the gaps; you solve it."
+												: "The teacher will open by probing what you already know."
 									}
 								/>
 							</ConversationContent>
@@ -185,9 +230,13 @@ export function DraftShell({
 						<div className="bg-background pb-4">
 							<div className={DOCK}>
 								<ComposerActions
-									picker={(picks.length > 0 || mode === "practice") && (
-										<NodePickerControl count={picks.length} onOpen={onOpenPicker} onClear={onClearPicks} />
-									)}
+									picker={
+										mode === "guide"
+											? attach
+											: (picks.length > 0 || mode === "practice") && (
+													<NodePickerControl count={picks.length} onOpen={onOpenPicker} onClear={onClearPicks} />
+												)
+									}
 									setup={setupCta}
 								/>
 								<div className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
@@ -205,7 +254,9 @@ export function DraftShell({
 										// input (owner refinement round, 2026-09-24) — no lesson has
 										// started yet, so the composer must not read like one is in
 										// flight.
-										placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
+										placeholder={
+											mode === "practice" ? "What do you want to practice?" : mode === "guide" ? "What's the problem set, and what's the goal?" : "What do you want to learn?"
+										}
 									/>
 								</div>
 								<StatsBar
@@ -230,7 +281,7 @@ export function DraftShell({
 	);
 }
 
-export function NewSession({ initialConfigured, mode = "teach" }: { initialConfigured: boolean; mode?: "teach" | "practice" }) {
+export function NewSession({ initialConfigured, mode = "teach" }: { initialConfigured: boolean; mode?: "teach" | "practice" | "guide" }) {
 	const router = useRouter();
 	const [text, setText] = useState("");
 	/* The draft MIRROR ("nothing gets lost" round, 2026-10-01): the shell's
@@ -285,9 +336,19 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 	const strongKeyless = useStrongKeyless();
 	const [setupOpen, setSetupOpen] = useState(false);
 
+	// THE GUIDE DRAFT'S FILES (2026-11-03): held here until the send
+	// uploads them onto the created session.
+	const [files, setFiles] = useState<File[]>([]);
+	const filesRef = useRef<File[]>([]);
+	const [fileNote, setFileNote] = useState<string | null>(null);
+	const applyFiles = (next: File[]) => {
+		filesRef.current = next;
+		setFiles(next);
+	};
+
 	const send = useCallback(() => {
 		const draft = textRef.current.trim();
-		if (!draft || busy) return;
+		if ((!draft && !(mode === "guide" && filesRef.current.length > 0)) || busy) return;
 		if (!configured) {
 			setSetupOpen(true);
 			return;
@@ -302,13 +363,25 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 			return;
 		}
 		setBusy(true);
+		if (mode === "guide") {
+			void startGuideSession(draft, filesRef.current, fetch)
+				.then((target) => {
+					if (target) router.push(target);
+					else setBusy(false);
+				})
+				.catch((err: unknown) => {
+					setFileNote(err instanceof Error ? err.message : "The problem set could not be attached.");
+					setBusy(false);
+				});
+			return;
+		}
 		void startDraftSession(draft, fetch, mode === "practice" ? "practice" : undefined, mode === "practice" ? picksRef.current : undefined)
 			.then((target) => {
 				if (target) router.push(target);
 				else setBusy(false);
 			})
 			.catch(() => setBusy(false));
-	}, [busy, router, configured, zeroKeys, strongKeyless]);
+	}, [busy, router, configured, zeroKeys, strongKeyless, mode]);
 
 	return (
 		<>
@@ -321,6 +394,24 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 				picks={picks}
 				onOpenPicker={openPicker}
 				onClearPicks={() => applyPicks([])}
+				attachCount={files.length}
+				attach={
+					mode === "guide" ? (
+						<AttachPdfsControl
+							files={files}
+							note={fileNote}
+							onAdd={(picked) => {
+								const { files: next, note } = addGuideFiles(filesRef.current, picked);
+								applyFiles(next);
+								setFileNote(note);
+							}}
+							onRemove={(i) => {
+								applyFiles(filesRef.current.filter((_, j) => j !== i));
+								setFileNote(null);
+							}}
+						/>
+					) : undefined
+				}
 				overlay={
 					// THE PICKER (owner round 10b): hosted INSIDE the content
 					// column — absolute inset-0 resolves to the column's relative

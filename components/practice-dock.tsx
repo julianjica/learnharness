@@ -49,9 +49,17 @@ export interface PracticeDockProps {
 	compactionRunning?: boolean;
 	/** The hint shown while submit is held (default: compaction's). */
 	holdLabel?: string;
+	/** Guiding sessions (2026-11-03): the part's label ("Problem 2(a)")
+	 *  replaces the bare "Problem" eyebrow. */
+	label?: string;
+	/** Guiding sessions: "Show solution" — present = the button renders;
+	 *  it unlocks once any thinking was submitted on this part. */
+	onRevealSolution?: () => void;
+	revealUnlocked?: boolean;
 }
 
-export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false, holdLabel = "compacting session…" }: PracticeDockProps) {
+export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false, holdLabel = "compacting session…", label, onRevealSolution, revealUnlocked = false }: PracticeDockProps) {
+	const eyebrow = label?.trim() || "Problem";
 	const [thinking, setThinking] = useState("");
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
@@ -95,7 +103,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<ChevronRightIcon className="size-4 shrink-0 rotate-90" />
-				<span className="font-medium">Problem</span>
+				<span className="font-medium">{eyebrow}</span>
 				<span className="min-w-0 flex-1 truncate">{input.statement}</span>
 			</button>
 		);
@@ -109,7 +117,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			    markdown + LaTeX rendered, capped by the measured column
 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
 			<div className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
-				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</div>
 				<div className="lh-prose text-[15px]">
 					<MessageResponse>{typeof input.statement === "string" ? repairMathForDisplay(input.statement) : input.statement}</MessageResponse>
 				</div>
@@ -160,12 +168,25 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{compactionRunning ? holdLabel : "↵ submits · ⇧↵ newline"}
 					</span>
+					{onRevealSolution && (
+						<Button
+							type="button"
+							variant="ghost"
+							data-testid="reveal-solution"
+							disabled={!revealUnlocked || compactionRunning}
+							title={revealUnlocked ? "Show the worked solution — this ends the part" : "Submit some work on this part first"}
+							onClick={onRevealSolution}
+							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium text-muted-foreground"
+						>
+							Show solution
+						</Button>
+					)}
 					<Button
 						type="button"
 						data-testid="practice-send"
 						disabled={thinking.trim().length === 0 || compactionRunning}
 						onClick={() => submit()}
-						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
+						className={cn("h-9 rounded-[6px] px-3.5 text-sm font-medium", !onRevealSolution && "ml-auto")}
 					>
 						Submit thinking
 					</Button>

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
+import { CompassIcon, CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
 import { GraphView } from "@/components/graph-view";
 import { MinimalHome } from "@/components/minimal-home";
 import { SetupDialog } from "@/components/setup-dialog";
-import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
+import { AttachPdfsControl, ComposerActions, NodePickerControl, addGuideFiles } from "@/components/composer-actions";
+import { startGuideSession } from "@/components/new-session";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { DictationBar, joinDictation, useDictation } from "@/components/dictation";
 import { useFieldCycle } from "@/components/field-cycle";
@@ -92,7 +93,15 @@ export function Home({
 	 *  may carry proposition picks from the chain table (the chip above
 	 *  the composer opens the picker; the picks seed the opening prompt).
 	 *  Not enforcing any input format — the picks are a convenience. */
-	const [mode, setMode] = useState<"teach" | "practice">("teach");
+	const [mode, setMode] = useState<"teach" | "practice" | "guide">("teach");
+	// Guide mode (2026-11-03): the attached PDFs, uploaded on send.
+	const [guideFiles, setGuideFiles] = useState<File[]>([]);
+	const guideFilesRef = useRef<File[]>([]);
+	const [guideNote, setGuideNote] = useState<string | null>(null);
+	const applyGuideFiles = (next: File[]) => {
+		guideFilesRef.current = next;
+		setGuideFiles(next);
+	};
 	const [practiceProps, setPracticeProps] = useState<{ id: string; name: string; statement: string }[]>([]);
 	const [chainSelectOpen, setChainSelectOpen] = useState(false);
 	// The chain table is CONTROLLED off this id set (the lifted pick).
@@ -112,7 +121,7 @@ export function Home({
 	};
 	const begin = async () => {
 		const t = topicRef.current.trim();
-		if (!t || busy) return;
+		if ((!t && !(mode === "guide" && guideFilesRef.current.length > 0)) || busy) return;
 		// Unconfigured: the send INTERCEPTS into the setup flow (the draft
 		// stays in the textarea; the learner sends it after Save).
 		if (!configured) {
@@ -131,6 +140,17 @@ export function Home({
 			return;
 		}
 		setBusy(true);
+		if (mode === "guide") {
+			try {
+				const target = await startGuideSession(t, guideFilesRef.current, fetch);
+				if (target) router.push(target);
+				else setBusy(false);
+			} catch (err) {
+				setGuideNote(err instanceof Error ? err.message : "The problem set could not be attached.");
+				setBusy(false);
+			}
+			return;
+		}
 		try {
 			// The map context (owner, 2026-10-04): picks in EITHER mode ride
 			// the CREATION as graphContext — the server writes a
@@ -219,13 +239,31 @@ export function Home({
 					    shows the pick HINT so the affordance is discoverable;
 					    teaching mode with nothing picked renders nothing. */}
 					<ComposerActions
-						picker={(practiceProps.length > 0 || mode === "practice") && (
-							<NodePickerControl
-								count={practiceProps.length}
-								onOpen={() => setChainSelectOpen(true)}
-								onClear={() => setPracticeProps([])}
-							/>
-						)}
+						picker={
+							mode === "guide" ? (
+								<AttachPdfsControl
+									files={guideFiles}
+									note={guideNote}
+									onAdd={(picked) => {
+										const { files: next, note } = addGuideFiles(guideFilesRef.current, picked);
+										applyGuideFiles(next);
+										setGuideNote(note);
+									}}
+									onRemove={(i) => {
+										applyGuideFiles(guideFilesRef.current.filter((_, j) => j !== i));
+										setGuideNote(null);
+									}}
+								/>
+							) : (
+								(practiceProps.length > 0 || mode === "practice") && (
+									<NodePickerControl
+										count={practiceProps.length}
+										onOpen={() => setChainSelectOpen(true)}
+										onClear={() => setPracticeProps([])}
+									/>
+								)
+							)
+						}
 						setup={zeroKeys ? (
 							<ZeroKeysPill inline onOpen={() => setSetupOpen(true)} />
 						) : (
@@ -270,7 +308,9 @@ export function Home({
 								void start();
 							}
 						}}
-						placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
+						placeholder={
+							mode === "practice" ? "What do you want to practice?" : mode === "guide" ? "What's the problem set, and what's the goal?" : "What do you want to learn?"
+						}
 						autoFocus
 						rows={1}
 						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
@@ -280,7 +320,7 @@ export function Home({
 					<button
 						type="submit"
 						aria-label="Start session"
-						disabled={(!topic.trim() && !dictation.active) || busy}
+						disabled={(!topic.trim() && !dictation.active && !(mode === "guide" && guideFiles.length > 0)) || busy}
 						className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40"
 					>
 						<CornerDownLeftIcon className="size-5" />
@@ -295,7 +335,7 @@ export function Home({
 						turns={[] as TurnUsage[]}
 						leadingSlot={
 							<div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="home-mode-switch">
-								{(["teach", "practice"] as const).map((m) => (
+								{(["teach", "practice", "guide"] as const).map((m) => (
 									<button
 										key={m}
 										type="button"
@@ -308,8 +348,8 @@ export function Home({
 												: "text-muted-foreground hover:text-foreground")
 										}
 									>
-										{m === "practice" ? <DumbbellIcon aria-hidden="true" className="size-3" /> : null}
-										{m === "teach" ? "Teach" : "Practice"}
+										{m === "practice" ? <DumbbellIcon aria-hidden="true" className="size-3" /> : m === "guide" ? <CompassIcon aria-hidden="true" className="size-3" /> : null}
+										{m === "teach" ? "Teach" : m === "practice" ? "Practice" : "Guide"}
 									</button>
 								))}
 							</div>

@@ -54,7 +54,7 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, CompassIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
@@ -217,7 +217,7 @@ export function Chat({
 	/** The session kind (practice sessions, owner 2026-10-04): practice
 	 *  renders no phase chip (no probe→teach arc applies) and a Practice
 	 *  tag rides the header instead. */
-	kind?: "teach" | "practice";
+	kind?: "teach" | "practice" | "guide";
 	initialPrompt?: string;
 	/** A teacher turn is running server-side but attached to no client
 	 * (navigated away mid-turn, returned while in flight). */
@@ -246,7 +246,7 @@ export function Chat({
 	// (core/view.ts projectView); sends are ONE explicit input event each
 	// ({chatId, input} — the stash indirection died with the SDK), and the
 	// turn stream is the VERBATIM AgentEvent passthrough the server emits.
-	const { messages, nativeMessages, contextTokens, send, steer, steerQueue, submitAnswer, dismissQuestion, dismissProblem, setMessages, adoptRecord, status, error, stop, clearError, resumeStream, setReattachSettled } =
+	const { messages, nativeMessages, contextTokens, send, steer, steerQueue, submitAnswer, dismissQuestion, dismissProblem, revealProblem, setMessages, adoptRecord, status, error, stop, clearError, resumeStream, setReattachSettled } =
 		useChatSession({ chatId, initialMessages, initiallyInFlight });
 
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
@@ -467,6 +467,17 @@ export function Chat({
 	const activeProblem = activeProblemOf(nativeMessages);
 	const activeProblemRef = useRef(activeProblem);
 	activeProblemRef.current = activeProblem;
+	// "Show solution" unlocks after any submission on the active part
+	// (and never while the guide is mid-reply on it).
+	const revealUnlocked =
+		activeProblem !== null &&
+		!(status === "submitted" || status === "streaming" || turnInFlight) &&
+		nativeMessages.some(
+			(m) =>
+				(m as { role?: string }).role === "custom" &&
+				(m as { customType?: string }).customType === "practice-thinking" &&
+				((m as { details?: { problemCallId?: unknown } }).details?.problemCallId === activeProblem.toolCallId),
+		);
 
 	const localStream = status === "submitted" || status === "streaming";
 	const busy = localStream || turnInFlight;
@@ -710,11 +721,14 @@ export function Chat({
 	 * has ever been posed (the fresh session's opening turn is owed, not
 	 * the move-on). Enter-on-empty and the Next chip both key on it. */
 	const nextReady =
-		kind === "practice" &&
+		(kind === "practice" || kind === "guide") &&
 		!pending &&
 		!activeProblem &&
 		!compacting &&
 		!busy &&
+		// A guide teaches between parts too: the pause is only right after
+		// a part ended (no check or new part since).
+		(kind !== "guide" || pausedAfterPart(nativeMessages)) &&
 		nativeMessages.some(
 			(m) => (m as { role?: string }).role === "assistant" &&
 				Array.isArray((m as { content?: unknown[] }).content) &&
@@ -1325,7 +1339,17 @@ export function Chat({
 					{kind !== "practice" && <CoverageRing chatId={chatId} refreshKey={coverageTick} />}
 					{/* Practice sessions: no phase arc — a quiet Practice tag
 					    instead of the phase chip. */}
-					{kind === "practice" ? (
+					{kind === "guide" ? (
+						<span
+							data-testid="phase-chip"
+							data-phase="guide"
+							aria-hidden="true"
+							className="pointer-events-none flex shrink-0 select-none items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+						>
+							<CompassIcon className="size-3" />
+							Guide
+						</span>
+					) : kind === "practice" ? (
 						<span
 							data-testid="phase-chip"
 							data-phase="practice"
@@ -1634,6 +1658,8 @@ export function Chat({
 					compactionRunning={compacting || asides.asking}
 					holdLabel={asides.asking ? "answering your side question…" : undefined}
 					onSubmitThinking={submitThinking}
+					onRevealSolution={kind === "guide" && activeProblem ? () => void revealProblem(activeProblem.toolCallId) : undefined}
+					revealUnlocked={revealUnlocked}
 					chatId={chatId}
 					plan={hasPlan ? <PlanMarginalia messages={messages} tree={asides.planRevision?.tree} /> : undefined}
 					onOpenPlan={() => setPlanOpen(true)}
@@ -1855,6 +1881,24 @@ export function probeArrivalExpanded(isAtBottom: boolean): boolean {
  * left the box stuck collapsed (resize round, verified live). Pure for
  * tests.
  */
+/** A guiding session's between-parts pause: the newest part-or-check
+ *  event in the record is a part's ending (a conclude, or the learner's
+ *  Show solution / discard marker). Pure for tests. */
+export function pausedAfterPart(messages: readonly LhMessage[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i] as { role?: string; customType?: string; content?: unknown };
+		if (m.role === "custom" && m.customType === "problem-dismissed") return true;
+		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+		for (let j = m.content.length - 1; j >= 0; j--) {
+			const b = m.content[j] as { type?: string; name?: string };
+			if (b.type !== "toolCall") continue;
+			if (b.name === "conclude") return true;
+			if (b.name === "problem" || b.name === "quiz" || b.name === "explain" || b.name === "ask_user_question" || b.name === "plan_init") return false;
+		}
+	}
+	return false;
+}
+
 export function shouldStampGeometryMute(nextH: number, prevH: number, pending: boolean): boolean {
 	return pending && nextH > prevH + 1;
 }
@@ -1865,6 +1909,8 @@ function DockOverlay({
 	compactionRunning,
 	holdLabel,
 	onSubmitThinking,
+	onRevealSolution,
+	revealUnlocked,
 	requiresReveal,
 	readingThinking,
 	onReadingThinking,
@@ -1896,6 +1942,10 @@ function DockOverlay({
 	practice: { toolCallId: string; input: unknown } | null;
 	/** (commit, text) — the practice dock's two submit lanes. */
 	onSubmitThinking: (text: string) => void;
+	/** Guiding sessions (2026-11-03): "Show solution" on the active part,
+	 *  unlocked once any thinking was submitted on it. */
+	onRevealSolution?: () => void;
+	revealUnlocked?: boolean;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
 	requiresReveal: boolean;
 	/** The reading-thinking draft (owner 2026-10-03) — owned by ChatView so
@@ -2398,6 +2448,9 @@ function DockOverlay({
 								<PracticeDock
 									problemCallId={practice.toolCallId}
 									input={practice.input as { statement: string }}
+									label={typeof (practice.input as { label?: unknown } | null)?.label === "string" ? (practice.input as { label: string }).label : undefined}
+									onRevealSolution={onRevealSolution}
+									revealUnlocked={revealUnlocked}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

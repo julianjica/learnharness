@@ -1,7 +1,8 @@
 "use client";
 
 import { CheckIcon, CircleX } from "lucide-react";
-import type { PdfResult, ResearchResult, SubagentArtifactData } from "@/src/core";
+import type { PdfResult, ResearchResult, SubagentArtifactData, TranscribeResult } from "@/src/core";
+import { MessageResponse } from "@/components/ai-elements/message";
 import type { LhViewMessage } from "@/src/core";
 import { isSubagentFailure } from "@/src/core";
 import { DemoOutputCard } from "@/components/artifacts/demo-card";
@@ -55,11 +56,39 @@ export function SubagentSteerCard({ message }: { message: LhViewMessage }) {
 			) : (
 				<PdfCompleteBadge result={data.result as PdfResult} />
 			);
+		case "transcribe":
+			return <ProblemSetBadge result={data.result as TranscribeResult} />;
 		case "demo":
 			return <DemoOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} />;
 		case "visual":
 			return <VisualOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} />;
 	}
+}
+
+/** The guide's intake (2026-11-03): a quiet one-liner that opens to the
+ *  whole transcription — what the guide works from, verbatim. */
+function ProblemSetBadge({ result }: { result: TranscribeResult }) {
+	const failed = isSubagentFailure("transcribe", result);
+	const pages = result.files.reduce((n, f) => n + f.pagesRead.length, 0);
+	return (
+		<details data-testid="problem-set-badge" className="group w-full text-xs text-muted-foreground">
+			<summary className="flex cursor-pointer select-none list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+				{failed ? <CircleX className="size-3.5" /> : <CheckIcon className="size-3.5" />}
+				<span className="font-medium uppercase tracking-wide">Problem set</span>
+				<span>{failed ? "could not be read" : "transcribed"}</span>
+				{!failed && pages > 0 && (
+					<span>
+						· {result.files.length} file{result.files.length === 1 ? "" : "s"}, {pages} page{pages === 1 ? "" : "s"}
+					</span>
+				)}
+				<span className="ml-1 text-xs text-muted-foreground/70 group-open:hidden">view</span>
+				<span className="ml-1 hidden text-xs text-muted-foreground/70 group-open:inline">hide</span>
+			</summary>
+			<div className="mt-2 rounded-xl border bg-card p-4 text-sm text-foreground">
+				<MessageResponse>{result.transcript}</MessageResponse>
+			</div>
+		</details>
+	);
 }
 
 /** The aborted-job chip: mirrors the complete-badge one-liner — the
