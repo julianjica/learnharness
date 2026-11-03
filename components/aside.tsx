@@ -26,7 +26,9 @@ function timeOf(iso: string): string {
 	return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-export function AsideBlock({ aside, streaming = false, error }: { aside: Pick<Aside, "question" | "answer" | "at">; streaming?: boolean; error?: string }) {
+type AsideView = Pick<Aside, "question" | "answer" | "at" | "planRevision" | "jobs">;
+
+export function AsideBlock({ aside, streaming = false, error }: { aside: AsideView; streaming?: boolean; error?: string }) {
 	const time = timeOf(aside.at);
 	return (
 		<div data-testid="aside-block" className="rounded-lg border-l-2 border-primary/40 bg-card/60 px-4 py-3 text-sm">
@@ -50,13 +52,21 @@ export function AsideBlock({ aside, streaming = false, error }: { aside: Pick<As
 			) : (
 				streaming && <div className="text-muted-foreground">Thinking…</div>
 			)}
+			{/* What the side turn did besides answering (owner, 2026-11-03). */}
+			{(aside.planRevision || (aside.jobs && aside.jobs.length > 0)) && (
+				<div data-testid="aside-outcome" className="pt-2 font-ui text-xs text-muted-foreground">
+					{[aside.planRevision ? "Plan revised — see the map" : null, ...(aside.jobs ?? []).map((j) => `Started a ${j.tool} job`)]
+						.filter(Boolean)
+						.join(" · ")}
+				</div>
+			)}
 		</div>
 	);
 }
 
 /** Every aside of a list, in order (delivered ones on an answered card, a
  *  practice marker, or the waiting anchor's thread). */
-export function AsideList({ asides }: { asides: readonly Pick<Aside, "id" | "question" | "answer" | "at">[] }) {
+export function AsideList({ asides }: { asides: readonly (AsideView & Pick<Aside, "id">)[] }) {
 	if (asides.length === 0) return null;
 	return (
 		<div data-testid="aside-list" className="flex flex-col gap-2">
@@ -132,6 +142,8 @@ export interface LiveAside {
 	at: string;
 	error?: string;
 	done: boolean;
+	planRevision?: Aside["planRevision"];
+	jobs?: Aside["jobs"];
 }
 
 /** The waiting anchor's side thread. `initial` seeds from the record's
@@ -178,7 +190,18 @@ export function useAsides(chatId: string, anchorId: string | null, initial: read
 					patch({ answer });
 				}
 				patch({ answer, at: new Date().toISOString(), done: true });
-				if (serverId) setItems((xs) => xs.map((x) => (x.id === id ? { ...x, id: serverId } : x)));
+				if (serverId) {
+					setItems((xs) => xs.map((x) => (x.id === id ? { ...x, id: serverId } : x)));
+					// The side turn's plan rewrite / jobs live on the stored
+					// aside, not the text stream: read them back once.
+					const stored = await fetch(`/api/chats/${chatId}`)
+						.then((r) => (r.ok ? (r.json() as Promise<{ pendingAsides?: PendingAside[] }>) : null))
+						.then((c) => c?.pendingAsides?.find((a) => a.id === serverId))
+						.catch(() => undefined);
+					if (stored && (stored.planRevision || stored.jobs)) {
+						setItems((xs) => xs.map((x) => (x.id === serverId ? { ...x, planRevision: stored.planRevision, jobs: stored.jobs } : x)));
+					}
+				}
 			} catch {
 				if (!controller.signal.aborted) patch({ error: "The side question could not be answered.", done: true });
 			} finally {
@@ -195,8 +218,18 @@ export function useAsides(chatId: string, anchorId: string | null, initial: read
 	const settled = (): Aside[] =>
 		thread
 			.filter((x) => (x as LiveAside).done !== false && !(x as LiveAside).error && x.answer)
-			.map((x) => ({ id: x.id, question: x.question, answer: x.answer, at: x.at }));
-	return { thread, asking, ask, settled };
+			.map((x) => ({
+				id: x.id,
+				question: x.question,
+				answer: x.answer,
+				at: x.at,
+				...(x.planRevision ? { planRevision: x.planRevision } : {}),
+				...(x.jobs ? { jobs: x.jobs } : {}),
+			}));
+	/** The newest plan rewrite in this thread — the plan window shows it
+	 *  before the check delivers it (owner: "right away"). */
+	const planRevision = [...thread].reverse().find((x) => x.planRevision)?.planRevision;
+	return { thread, asking, ask, settled, planRevision };
 }
 
 /** The anchor's thread in the transcript: settled asides, plus the one

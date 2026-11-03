@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo } from "react";
-import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
+import { derivedNodeStatus, derivePlanStatuses, type PlanTree } from "@/src/core";
 import {
 	PlanDiagram,
 	GRAPH_PAD,
@@ -41,9 +41,12 @@ export function planExists(messages: readonly PopupMessage[]): boolean {
 	return !!tree && tree.nodes.length > 0;
 }
 
-export function PlanMarginalia({ messages }: { messages: readonly PopupMessage[] }) {
+/** `tree` overrides the transcript's (a side turn's not-yet-delivered
+ *  plan rewrite — asides, owner 2026-11-03). */
+export function PlanMarginalia({ messages, tree: override }: { messages: readonly PopupMessage[]; tree?: PlanTree | null }) {
 	const markerId = useId().replace(/[^a-zA-Z0-9-]/g, "");
-	const tree = useMemo(() => latestTree(messages), [messages]);
+	const transcriptTree = useMemo(() => latestTree(messages), [messages]);
+	const tree = override ?? transcriptTree;
 	const statuses = useMemo(
 		() => (tree ? derivePlanStatuses(tree, messages as Parameters<typeof derivePlanStatuses>[1]) : null),
 		[tree, messages],

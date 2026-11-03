@@ -719,7 +719,19 @@ export function latestTree(messages: readonly PopupMessage[]): PlanTree | null {
 		if (!parts) continue;
 		for (let p = parts.length - 1; p >= 0; p--) {
 			const part = parts[p]!;
-			if (!part.type.startsWith("tool-plan_") || part.state !== "output-available") continue;
+			if (part.state !== "output-available") continue;
+			// A side turn's rewrite (asides, owner 2026-11-03) rides the
+			// answered check's `asides`: the check is later than any plan_init
+			// before it, so its newest revision wins.
+			if (!part.type.startsWith("tool-plan_")) {
+				const asides = (part.output as { asides?: { planRevision?: { tree?: PlanTree } }[] } | undefined)?.asides;
+				if (!Array.isArray(asides)) continue;
+				for (let a = asides.length - 1; a >= 0; a--) {
+					const revised = asides[a]?.planRevision?.tree;
+					if (revised && Array.isArray(revised.nodes)) return revised;
+				}
+				continue;
+			}
 			const output = part.output as { tree?: PlanTree } | undefined;
 			if (output?.tree && Array.isArray(output.tree.nodes)) return output.tree;
 		}
@@ -748,8 +760,9 @@ const POPUP_PAD = GLOW_REACH;
  * territory. Surface 80% + blur (owner decision): the transcript ghosts
  * through while the focus owns the session area.
  */
-export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessage[]; onClose: () => void }) {
-	const tree = useMemo(() => latestTree(messages), [messages]);
+export function PlanPopup({ messages, tree: override, onClose }: { messages: readonly PopupMessage[]; tree?: PlanTree | null; onClose: () => void }) {
+	const transcriptTree = useMemo(() => latestTree(messages), [messages]);
+	const tree = override ?? transcriptTree;
 	const statuses = useMemo(
 		() => (tree ? derivePlanStatuses(tree, messages as Parameters<typeof derivePlanStatuses>[1]) : null),
 		[tree, messages],

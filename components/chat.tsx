@@ -866,7 +866,11 @@ export function Chat({
 	setupOpenRef.current = setupOpen;
 	// The session's live plan (drives the top-bar chip; the marginalia
 	// derives its own from the same transcript).
-	const planTree = useMemo(() => latestTree(messages), [messages]);
+	// A side turn's plan rewrite shows at once (owner, 2026-11-03): the
+	// waiting thread's revision outranks the transcript until delivery,
+	// when the answered check carries it (latestTree reads it there).
+	const transcriptTree = useMemo(() => latestTree(messages), [messages]);
+	const planTree = asides.planRevision?.tree ?? transcriptTree;
 
 	// ── Session usage (wave-4 stats bar) ──
 	// The money channel: the record's turns log and read-time server Pi
@@ -1627,10 +1631,11 @@ export function Chat({
 				<DockOverlay
 					pending={pending}
 					practice={activeProblem}
-					compactionRunning={compacting}
+					compactionRunning={compacting || asides.asking}
+					holdLabel={asides.asking ? "answering your side question…" : undefined}
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
-					plan={hasPlan ? <PlanMarginalia messages={messages} /> : undefined}
+					plan={hasPlan ? <PlanMarginalia messages={messages} tree={asides.planRevision?.tree} /> : undefined}
 					onOpenPlan={() => setPlanOpen(true)}
 					requiresReveal={requiresReveal}
 					readingThinking={readingThinking}
@@ -1719,7 +1724,7 @@ export function Chat({
 						onClose={() => setFigureFocus(null)}
 					/>
 				)}
-				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} />}
+				{planOpen && <PlanPopup messages={messages} tree={asides.planRevision?.tree} onClose={() => setPlanOpen(false)} />}
 				<AbortTurnDialog mode={abortAsk} onClose={() => setAbortAsk(null)} onConfirm={confirmAbort} busy={busy} />
 				</div>
 			</div>
@@ -1858,6 +1863,7 @@ function DockOverlay({
 	pending,
 	practice,
 	compactionRunning,
+	holdLabel,
 	onSubmitThinking,
 	requiresReveal,
 	readingThinking,
@@ -1882,6 +1888,8 @@ function DockOverlay({
 	/** Compaction running for this chat (round 14) — the docks' submit
 	 *  affordance gate (the server's registry is the real one). */
 	compactionRunning: boolean;
+	/** The held-submit hint when it is not compaction (a side answer). */
+	holdLabel?: string;
 	/** The ACTIVE practice problem (practice sessions, 2026-10-04):
 	 *  {toolCallId, input} — dock ownership exactly like a pending
 	 *  question (the composer is replaced); null in teaching sessions. */
@@ -2384,6 +2392,7 @@ function DockOverlay({
 									onEscape={dictationCancel}
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}
+									holdLabel={holdLabel}
 								/>
 							) : practice ? (
 								<PracticeDock
@@ -2397,6 +2406,7 @@ function DockOverlay({
 									onSubmit={onSubmitThinking}
 									onEscape={dictationCancel}
 									compactionRunning={compactionRunning}
+									holdLabel={holdLabel}
 								/>
 							) : (
 								composer

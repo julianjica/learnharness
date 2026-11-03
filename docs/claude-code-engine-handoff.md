@@ -121,3 +121,16 @@ distribute builds with it enabled.
   d82f30f). Open item: the golden-fixture law wants a real practice record
   containing an `aside` marker added to tests/fixtures/golden-data (+ the
   marker-coverage EXPECTED list).
+
+## Update 2026-11-03: Dracula theme hook, math render fix, side turns
+
+- Optional local theme: `data/theme.css` (gitignored data dir) served by
+  `GET /api/theme.css`; the owner's Dracula PRO palette lives only there.
+- Render fix: `$x<a$` inside math opened an HTML tag and swallowed the rest
+  of a message (Balanced Allocations); `spaceMathAngles` in
+  `src/core/math-delims.ts` guards message text and the reasoning panel.
+- Asides are now answered by the session's own agent in a side turn
+  (docs/architecture.md "Asides"): one-shot on Claude Code / Codex, plan
+  revisions via `plan_init` saved at once, pdf/research jobs allowed, the
+  check locked while it runs. Live-checked on Claude Code opus (~19 s; it
+  revised the plan unprompted). Codex side turns not yet live-checked.
