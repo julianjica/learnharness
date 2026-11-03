@@ -15,7 +15,7 @@ import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MessageResponse } from "../components/ai-elements/message.tsx";
 import { MermaidError } from "../components/mermaid-error.tsx";
-import { transformMathDelimiters, healOverescapedCommands } from "../src/core/math-delims.ts";
+import { transformMathDelimiters, healOverescapedCommands, spaceMathAngles } from "../src/core/math-delims.ts";
 
 /** Render through MessageResponse in static mode (no streaming/remend artifacts). */
 function render(md: string): string {
@@ -444,3 +444,28 @@ describe("over-escaped command heal — doubled backslashes in tool args (owner 
 	});
 });
 
+
+describe("a `<` inside math never opens an HTML tag (2026-11-03)", () => {
+	// Real data (Balanced Allocations, msg 40): `$Y(\omega)<a$` opened an
+	// <a> tag and the rest of the lesson vanished mid-proof.
+	const PROOF =
+		"- If $Y(\\omega)\\ge a$, the left side is $a$.\n- If $Y(\\omega)<a$, the left side is $0$, and $0\\le Y(\\omega)$ because $Y\\ge0$.\n\nNow take expectations of both sides.";
+
+	it("renders everything after the `<`", () => {
+		const html = render(PROOF);
+		assert.match(html, /because/);
+		assert.match(html, /Now take expectations of both sides\./);
+	});
+
+	it("spaces `<` before a letter, `/`, `!` or `?` inside math spans only", () => {
+		assert.equal(spaceMathAngles("$x<a$ and $p</q$"), "$x< a$ and $p< /q$");
+		assert.equal(spaceMathAngles("$$\nx<b\n$$"), "$$\nx< b\n$$");
+		assert.equal(spaceMathAngles("\\(x<a\\)"), "\\(x< a\\)");
+	});
+
+	it("leaves prose, code, numbers and spaced comparisons alone", () => {
+		for (const s of ["<b>bold</b> $x < a$", "$x<1$", "`$x<a$`", "```\n$x<a$\n```", "$x<a unbalanced"]) {
+			assert.equal(spaceMathAngles(s), s);
+		}
+	});
+});

@@ -34,7 +34,7 @@ import {
   type PluginConfig,
 } from "streamdown";
 import { mdComponents } from "@/components/md-blocks";
-import { transformMathDelimiters } from "@/src/core";
+import { spaceMathAngles, transformMathDelimiters } from "@/src/core";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: LhViewMessage["role"];
@@ -360,9 +360,10 @@ export const MessageResponse = memo(
     // Legacy backslash delimiters are converted in a single linear scan;
     // native dollar math passes through to Streamdown unchanged. Incomplete
     // legacy spans are left for a later render when their closer arrives.
+    // spaceMathAngles keeps a `<` in math from opening an HTML tag.
     const content =
       typeof children === "string"
-        ? transformMathDelimiters(children)
+        ? spaceMathAngles(transformMathDelimiters(children))
         : children;
 
     return (

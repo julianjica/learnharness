@@ -513,6 +513,26 @@ function halveOverescapedCommandRuns(inner: string): string {
 
 export function healOverescapedCommands(text: string): string {
 	if (!text.includes("\\\\")) return text;
+	return mapMathSpans(text, halveOverescapedCommandRuns);
+}
+
+/**
+ * HTML-looking `<` inside math (2026-11-03, real data: `$Y(\omega)<a$`).
+ * Streamdown reads raw HTML, so `<` + a letter inside a span (`<a`, `<b`,
+ * `</`, `<!`) opens a tag that swallows the rest of the message — the
+ * lesson silently stopped mid-proof. A space after the `<` makes it plain
+ * text to the HTML pass; KaTeX ignores the space, so the math is unchanged.
+ * Balanced spans only (code spans and fences excluded), like the heal above.
+ */
+export function spaceMathAngles(text: string): string {
+	if (!text.includes("<")) return text;
+	return mapMathSpans(text, (inner) => inner.replace(/<(?=[A-Za-z/!?])/g, "< "));
+}
+
+/** Rewrite the inner text of every balanced math span — legacy `\(…\)` /
+ *  `\[…\]` and dollar `$…$` / `$$…$$` — skipping code spans and fences.
+ *  Unbalanced spans pass through untouched. */
+function mapMathSpans(text: string, mapInner: (inner: string) => string): string {
 	const out: string[] = [];
 	let i = 0;
 	while (i < text.length) {
@@ -542,7 +562,7 @@ export function healOverescapedCommands(text: string): string {
 				const closeAt = findClose(text, i + open.length, close);
 				if (closeAt !== -1) {
 					const inner = text.slice(i + open.length, closeAt);
-					out.push(open + halveOverescapedCommandRuns(inner) + close);
+					out.push(open + mapInner(inner) + close);
 					i = closeAt + close.length;
 					continue;
 				}
@@ -555,7 +575,7 @@ export function healOverescapedCommands(text: string): string {
 			if (close) {
 				out.push(
 					text.slice(i, i + size) +
-					halveOverescapedCommandRuns(text.slice(i + size, close.at)) +
+					mapInner(text.slice(i + size, close.at)) +
 					text.slice(close.at, close.after),
 			);
 				i = close.after;
