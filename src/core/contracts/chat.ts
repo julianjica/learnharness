@@ -26,7 +26,17 @@ import type { PendingAside } from "./asides.ts";
  *  the default and ABSENT on pre-practice records (no migration — absence
  *  reads as teach); "practice" marks an adaptive-practice session — the
  *  practice agent, its two tools, no extraction, no graph writes. */
-export type ChatKind = "teach" | "practice";
+export type ChatKind = "teach" | "practice" | "guide";
+
+/** A file the learner attached when creating a guiding session (owner
+ *  design 2026-11-03): copied into data/attachments/<chatId>/ at
+ *  creation. `path` is absolute (the agent's read/pdf tools take it
+ *  as-is); `name` is the learner's original filename. */
+export interface ChatAttachment {
+	name: string;
+	path: string;
+	bytes: number;
+}
 
 export interface ChatRecord {
 	id: string;
@@ -36,6 +46,9 @@ export interface ChatRecord {
 	messages: LhMessage[];
 	/** The session's kind — absent = teach (pre-practice records). */
 	kind?: ChatKind;
+	/** Guiding sessions (2026-11-03): the problem-set files attached at
+	 *  creation. Absent everywhere else (no migration). */
+	attachments?: ChatAttachment[];
 	/** The session's plan tree (vision §2) — written by plan tools via saveTree. */
 	tree?: PlanTree;
 	/** Append-only usage log (observability, 2026-09): one entry per model
@@ -280,8 +293,8 @@ export interface ChatSummary {
 	phase: Phase3;
 	/** An unanswered quiz/ask question is waiting for the learner. */
 	pendingQuestion: boolean;
-	/** Practice sessions (2026-10-04): a posed problem with no conclude —
-	 *  the sidebar meta's "Problem waiting". Absent on teaching sessions. */
+	/** Practice and guiding sessions: a posed problem with no conclude —
+	 *  the sidebar meta's "Problem waiting". False on teaching sessions. */
 	pendingProblem: boolean;
 	/** The record's model-control settings — rides the list payload via the
 	 *  summary spread (the picker never needs it from here; the full record

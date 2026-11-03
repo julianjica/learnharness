@@ -40,7 +40,13 @@ export interface PlanTree {
 // done ledger of any kind. No backwards compatibility for old records.
 
 /** Derived, never stored: status of a node for the panel (vision §2). */
-export type PlanNodeStatus = "current" | "visited" | "upcoming";
+export type PlanNodeStatus = "current" | "visited" | "upcoming" | "done";
+
+/** How a guiding session's problem node ended (2026-11-03): "solved"
+ *  when every concluded part was solved (with or without hints),
+ *  "viewed" when any part's solution was shown, "ended" otherwise
+ *  (moved on, surrendered, dismissed). */
+export type PlanProblemOutcome = "solved" | "viewed" | "ended";
 
 // ─── derived statuses: position from CALLS, never from results ─────────────
 //
@@ -70,10 +76,16 @@ export interface DerivedPlanStatuses {
 	current: string | null;
 	/** Nodes referenced by earlier tagged calls — been there, monotonic. */
 	visited: ReadonlySet<string>;
+	/** Guiding sessions (2026-11-03): problem nodes every posed part of
+	 *  which has concluded, with how they ended. The ONE completion signal
+	 *  on the map, and it reads conclusions, never checks. Empty
+	 *  elsewhere (practice problems carry no nodeId). */
+	done: ReadonlyMap<string, PlanProblemOutcome>;
 }
 
 /** Statuses of a node: the derived view the plan panel should render. */
 export function derivedNodeStatus(statuses: DerivedPlanStatuses, nodeId: string): PlanNodeStatus {
+	if (statuses.done.has(nodeId)) return "done";
 	if (statuses.current === nodeId) return "current";
 	if (statuses.visited.has(nodeId)) return "visited";
 	return "upcoming";
@@ -83,8 +95,21 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 	const ids = new Set(tree.nodes.map((n) => n.id));
 	const runs: string[] = []; // distinct tagged nodes in call order, CONSECUTIVE
 	// duplicates collapsed (several checks on one node = one stay on it)
+	const problems = new ProblemFold();
 	for (const m of messages) {
 		for (const part of m.parts) {
+			// A guide's problem part tags position like a check, and its
+			// conclusion (or the "Show solution" face) closes the part.
+			if (part.type === "tool-problem") {
+				if (part.state === "output-error") continue; // a refused pose never happened
+				const nodeId = problems.pose(part.input, ids);
+				if (nodeId && runs.at(-1) !== nodeId) runs.push(nodeId);
+				continue;
+			}
+			if (part.type === "tool-conclude") {
+				if (part.state === "output-available") problems.conclude(part.input);
+				continue;
+			}
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
 			if (part.type !== "tool-quiz" && part.type !== "tool-explain") continue;
@@ -98,7 +123,44 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 	// run. A revisit (a→b→a) puts a in visited AND current — current wins at
 	// render (derivedNodeStatus), visited records it has been left before.
 	const visited = new Set(runs.slice(0, -1));
-	return { current, visited };
+	return { current, visited, done: problems.done() };
+}
+
+/** The guide's problem-node fold: parts pose against a problem node
+ *  (`nodeId`), one at a time; a conclusion closes the open one. A node is
+ *  done when it has concluded parts and none open. */
+class ProblemFold {
+	private open: string | null = null;
+	private outcomes = new Map<string, string[]>();
+	private openNodes = new Set<string>();
+	pose(input: unknown, ids: ReadonlySet<string>): string | null {
+		const nodeId = (input as { nodeId?: unknown } | undefined)?.nodeId;
+		if (typeof nodeId !== "string" || !ids.has(nodeId)) {
+			this.open = null;
+			return null;
+		}
+		this.open = nodeId;
+		this.openNodes.add(nodeId);
+		return nodeId;
+	}
+	conclude(input: unknown): void {
+		if (!this.open) return;
+		const outcome = (input as { outcome?: unknown } | undefined)?.outcome;
+		this.outcomes.set(this.open, [...(this.outcomes.get(this.open) ?? []), typeof outcome === "string" ? outcome : ""]);
+		this.openNodes.delete(this.open);
+		this.open = null;
+	}
+	done(): Map<string, PlanProblemOutcome> {
+		const out = new Map<string, PlanProblemOutcome>();
+		for (const [nodeId, list] of this.outcomes) {
+			if (this.openNodes.has(nodeId)) continue;
+			out.set(
+				nodeId,
+				list.includes("revealed") ? "viewed" : list.every((o) => o === "solved" || o === "solvedWithHints") ? "solved" : "ended",
+			);
+		}
+		return out;
+	}
 }
 
 /**
@@ -132,12 +194,39 @@ import type { LhMessage } from "../native-messages.ts";
 export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessage[]): DerivedPlanStatuses {
 	const ids = new Set(tree.nodes.map((n) => n.id));
 	const runs: string[] = [];
+	const problems = new ProblemFold();
+	const clean = new Set<string>();
 	for (const m of messages) {
-		if ((m as { role?: string }).role !== "assistant") continue;
+		const r = m as { role?: string; toolCallId?: string; isError?: boolean };
+		if (r.role === "toolResult" && !r.isError && r.toolCallId) clean.add(r.toolCallId);
+	}
+	for (const m of messages) {
+		const role = (m as { role?: string }).role;
+		// The "Show solution" marker closes the open part at once (its
+		// deferred conclude pair, outcome "revealed", then finds nothing open).
+		if (role === "custom") {
+			const marker = m as { customType?: string; details?: { outcome?: unknown } };
+			if (marker.customType === "problem-dismissed" && marker.details?.outcome === "revealed") problems.conclude({ outcome: "revealed" });
+			continue;
+		}
+		if (role !== "assistant") continue;
 		const content = (m as { content?: unknown }).content;
 		if (!Array.isArray(content)) continue;
-		for (const block of content as Array<{ type?: string; name?: string; arguments?: unknown }>) {
-			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain")) continue;
+		for (const block of content as Array<{ type?: string; id?: string; name?: string; arguments?: unknown }>) {
+			if (block.type !== "toolCall") continue;
+			// Problem and conclude count through their clean results only
+			// (the honest-activation law of activeProblemOf).
+			if ((block.name === "problem" || block.name === "conclude") && !clean.has(block.id ?? "")) continue;
+			if (block.name === "problem") {
+				const nodeId = problems.pose(block.arguments, ids);
+				if (nodeId && runs.at(-1) !== nodeId) runs.push(nodeId);
+				continue;
+			}
+			if (block.name === "conclude") {
+				problems.conclude(block.arguments);
+				continue;
+			}
+			if (block.name !== "quiz" && block.name !== "explain") continue;
 			const nodeId = (block.arguments as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue;
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
@@ -145,5 +234,5 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 	}
 	const current = runs.at(-1) ?? null;
 	const visited = new Set(runs.slice(0, -1));
-	return { current, visited };
+	return { current, visited, done: problems.done() };
 }

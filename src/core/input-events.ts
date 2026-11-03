@@ -26,7 +26,7 @@
  */
 
 import type { QuestionAnswerData } from "./question-core.ts";
-import type { LhMessage } from "./native-messages.ts";
+import type { LhMarkerMessage, LhMessage } from "./native-messages.ts";
 import type { PendingAside } from "./contracts/asides.ts";
 import { asidesFor } from "./asides.ts";
 import {
@@ -37,9 +37,11 @@ import {
 	newAnswerResult,
 	newNextMessage,
 	newProblemDismissedMarker,
+	newProblemRevealedMarker,
 	newThinkingMessage,
 	newUserMessage,
-	pendingProblemDismissalOf,
+	pendingProblemEndingOf,
+	PRACTICE_PROBLEM_TOOL,
 } from "./native-messages.ts";
 import { QUESTION_TOOLS, toolQuestionKind } from "./pending.ts";
 
@@ -80,17 +82,21 @@ export type DismissInput =
 	/** The problem discard (practice, owner 2026-10-04): ask-style — the
 	 *  silent route appends the UI-only marker and wakes nothing; the
 	 *  conclude pair rides the user's NEXT input (inputAppends). */
-	| { type: "dismiss-problem"; problemCallId: string };
+	| { type: "dismiss-problem"; problemCallId: string }
+	/** "Show solution" (guiding sessions, owner 2026-11-03): the same
+	 *  silent shape — the reveal marker lands, nothing wakes; it unlocks
+	 *  once the learner has submitted any work on the problem. */
+	| { type: "reveal-problem"; problemCallId: string };
 
 /** Parse and validate a dismissal event off a request body. */
 export function parseDismissInput(input: unknown): DismissInput {
 	if (typeof input !== "object" || input === null) throw new ChatInputError("input must be an object");
 	const i = input as Record<string, unknown>;
-	if (i.type === "dismiss-problem") {
+	if (i.type === "dismiss-problem" || i.type === "reveal-problem") {
 		if (typeof i.problemCallId !== "string" || i.problemCallId.length === 0) {
-			throw new ChatInputError("dismiss-problem input requires problemCallId");
+			throw new ChatInputError(`${i.type} input requires problemCallId`);
 		}
-		return { type: "dismiss-problem", problemCallId: i.problemCallId };
+		return { type: i.type, problemCallId: i.problemCallId };
 	}
 	if (i.type !== "dismiss") throw new ChatInputError(`unknown input type: ${String(i.type)}`);
 	if (typeof i.toolCallId !== "string" || i.toolCallId.length === 0) {
@@ -132,13 +138,24 @@ export function parseUserSteerInput(input: unknown): UserSteerInput {
 /** The native appends a dismissal makes (pure — same orphan discipline
  *  as answers: the call must be a DANGLING question call, or — the
  *  practice variant — the ACTIVE problem). */
-export function dismissAppends(record: { messages: LhMessage[]; pendingAsides?: PendingAside[] }, input: DismissInput): LhMessage[] {
+export function dismissAppends(record: { messages: LhMessage[]; kind?: string; pendingAsides?: PendingAside[] }, input: DismissInput): LhMessage[] {
 	if (input.type === "dismiss-problem") {
 		const active = activeProblemOf(record.messages);
 		if (!active || active.toolCallId !== input.problemCallId) {
 			throw new ChatInputError("dismiss-problem input targets no active problem");
 		}
 		return [newProblemDismissedMarker(input.problemCallId)];
+	}
+	if (input.type === "reveal-problem") {
+		if (record.kind !== "guide") throw new ChatInputError("reveal-problem input is a guiding-session affordance");
+		const active = activeProblemOf(record.messages);
+		if (!active || active.toolCallId !== input.problemCallId) {
+			throw new ChatInputError("reveal-problem input targets no active problem");
+		}
+		if (!hasThinkingFor(record.messages, input.problemCallId)) {
+			throw new ChatInputError("reveal-problem input requires submitted work on the problem");
+		}
+		return [newProblemRevealedMarker(input.problemCallId)];
 	}
 	const pending = danglingQuestionOf(record.messages);
 	if (!pending || pending.toolCallId !== input.toolCallId) {
@@ -225,8 +242,8 @@ export function inputAppends(
 			// between-problems affordance — practice sessions only, nothing
 			// active (mid-problem input rides the dock), and the client gates
 			// make violations unreachable in practice anyway.
-			if (record.kind !== "practice") {
-				throw new ChatInputError("next input is a practice-session affordance");
+			if (record.kind !== "practice" && record.kind !== "guide") {
+				throw new ChatInputError("next input is a practice-session or guiding-session affordance");
 			}
 			if (activeProblemOf(record.messages)) {
 				throw new ChatInputError("next input requires no active problem");
@@ -254,9 +271,43 @@ function withAsides(
 /** Practice sessions deliver EVERY waiting aside as one marker ahead of
  *  the learner's next input (nothing dangles in practice, so a marker is
  *  legal there). Empty outside practice or when none wait. */
-function practiceAsides(record: { kind?: string; pendingAsides?: PendingAside[] }): LhMessage[] {
-	if (record.kind !== "practice" || !record.pendingAsides?.length) return [];
-	return [newAsidesMessage(record.pendingAsides.map(({ anchorId: _anchor, ...aside }) => aside))];
+function practiceAsides(record: { kind?: string; messages?: readonly LhMessage[]; pendingAsides?: PendingAside[] }): LhMessage[] {
+	if (!record.pendingAsides?.length) return [];
+	if (record.kind === "practice") {
+		return [newAsidesMessage(record.pendingAsides.map(({ anchorId: _anchor, ...aside }) => aside))];
+	}
+	// Guiding sessions (2026-11-03) mix both anchors: a check's asides
+	// ride its answer (withAsides); asides hung on a PROBLEM — the only
+	// other anchor — ride a marker here, like practice.
+	if (record.kind === "guide") {
+		const problems = problemCallIds(record.messages ?? []);
+		const onProblems = record.pendingAsides.filter((a) => problems.has(a.anchorId));
+		return onProblems.length > 0 ? [newAsidesMessage(onProblems.map(({ anchorId: _anchor, ...aside }) => aside))] : [];
+	}
+	return [];
+}
+
+/** Every `problem` call id in the record. */
+function problemCallIds(messages: readonly LhMessage[]): Set<string> {
+	const ids = new Set<string>();
+	for (const m of messages) {
+		if ((m as { role?: string }).role !== "assistant") continue;
+		for (const b of (m as { content: Array<{ type: string; id?: string; name?: string }> }).content) {
+			if (b.type === "toolCall" && b.name === PRACTICE_PROBLEM_TOOL && b.id) ids.add(b.id);
+		}
+	}
+	return ids;
+}
+
+/** Has the learner submitted any thinking on this problem? (the
+ *  "Show solution" unlock — owner: "after any submission"). */
+function hasThinkingFor(messages: readonly LhMessage[], problemCallId: string): boolean {
+	return messages.some(
+		(m) =>
+			(m as { role?: string }).role === "custom" &&
+			(m as LhMarkerMessage).customType === "practice-thinking" &&
+			((m as LhMarkerMessage).details as { problemCallId?: unknown } | null)?.problemCallId === problemCallId,
+	);
 }
 
 /** The deferred conclude synthesis (owner ruling, 2026-10-04): a
@@ -265,8 +316,8 @@ function practiceAsides(record: { kind?: string; pendingAsides?: PendingAside[] 
  *  the dismissal through its own vocabulary and the slot frees. Pure;
  *  empty when nothing dismissals pend. */
 function dismissalConclusion(record: { messages: LhMessage[] }): LhMessage[] {
-	const problemCallId = pendingProblemDismissalOf(record.messages);
-	return problemCallId ? concludedByDismissalPair(problemCallId) : [];
+	const ending = pendingProblemEndingOf(record.messages);
+	return ending ? concludedByDismissalPair(ending.problemCallId, ending.outcome) : [];
 }
 
 /** Is this tool name a question tool (dock-owned, answer-gated)? */

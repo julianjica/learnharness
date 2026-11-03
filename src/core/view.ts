@@ -181,7 +181,30 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 		}
 
 		if (role === "custom") {
-			projectMarker(m as LhMarkerMessage, out);
+			const marker = m as LhMarkerMessage;
+			const revealed = revealedProblemOf(marker);
+			if (revealed) {
+				// "Show solution" (guiding sessions, 2026-11-03): the marker IS
+				// the face — a conclude card with outcome "revealed" and the
+				// committed solution, at once (the deferred pair stays hidden).
+				out.push({
+					id: marker.id,
+					role: "assistant",
+					parts: [
+						{
+							type: `tool-${PRACTICE_CONCLUDE_TOOL}`,
+							toolCallId: `reveal_${revealed}`,
+							input: { outcome: "revealed" },
+							state: "output-available",
+							output: "",
+							reveal: modelSolutionOfProblem(messages, revealed),
+							problemInput: problemArgsOf(messages, revealed),
+						},
+					],
+				});
+				continue;
+			}
+			projectMarker(marker, out);
 			continue;
 		}
 
@@ -217,6 +240,9 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 				} else if (block.type === "thinking") {
 					reasoning.push({ type: "reasoning", id: `${m.id}-r${reasoningN++}`, text: block.thinking, state: "done" });
 				} else if (block.type === "toolCall") {
+					// The "Show solution" conclusion's deferred pair is model-facing
+					// only: its face already rendered at the marker.
+					if (block.name === PRACTICE_CONCLUDE_TOOL && (block.arguments as { outcome?: unknown } | undefined)?.outcome === "revealed" && assistant.model === "synthetic-conclude") continue;
 					const part = toolPartOf(block, live, streamingMessage);
 					// The conclusion's reveal join (owner round, 2026-10-05): the
 					// hero of a conclude card is the modelSolution committed at POSE
@@ -266,6 +292,28 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
  *  a NORMAL tool part (its result acks with no payload, details null —
  *  but the ConcludeCard reads the call's input, and output-available with
  *  output undefined renders fine). */
+/** The problem call a "Show solution" marker ended, or null. */
+function revealedProblemOf(marker: LhMarkerMessage): string | null {
+	if (marker.customType !== "problem-dismissed") return null;
+	const details = marker.details as { problemCallId?: unknown; outcome?: unknown } | null;
+	return details?.outcome === "revealed" && typeof details.problemCallId === "string" ? details.problemCallId : null;
+}
+
+function problemArgsOf(messages: readonly LhMessage[], problemCallId: string): Record<string, unknown> | undefined {
+	for (const m of messages) {
+		if ((m as { role?: string }).role !== "assistant") continue;
+		for (const b of (m as AssistantMessage).content) {
+			if (b.type === "toolCall" && b.id === problemCallId) return (b.arguments ?? undefined) as Record<string, unknown> | undefined;
+		}
+	}
+	return undefined;
+}
+
+function modelSolutionOfProblem(messages: readonly LhMessage[], problemCallId: string): string | undefined {
+	const solution = problemArgsOf(messages, problemCallId)?.modelSolution;
+	return typeof solution === "string" ? solution : undefined;
+}
+
 function isPlaceholderResultTool(name: string): boolean {
 	return (QUESTION_TOOLS as readonly string[]).includes(name) || name === "problem";
 }

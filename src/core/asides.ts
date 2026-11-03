@@ -33,13 +33,17 @@ export type AsideAnchor =
 const CHECK_TOOLS = new Set(["quiz", "ask_user_question", "explain"]);
 
 export function asideAnchorOf(record: { messages: readonly LhMessage[]; kind?: string }): AsideAnchor | null {
-	if (record.kind === "practice") {
+	// Guiding sessions (2026-11-03) hold both: an active problem part
+	// anchors like practice, and a waiting check anchors like teaching
+	// (a guide has no probe phase, so every check is a teach-phase one).
+	if (record.kind === "practice" || record.kind === "guide") {
 		const active = activeProblemOf(record.messages);
-		if (!active) return null;
-		const statement = (active.input as { statement?: unknown } | null)?.statement;
-		return { kind: "problem", anchorId: active.toolCallId, statement: typeof statement === "string" ? statement : "" };
-	}
-	if (!hasProbeDone(record.messages)) return null;
+		if (active) {
+			const statement = (active.input as { statement?: unknown } | null)?.statement;
+			return { kind: "problem", anchorId: active.toolCallId, statement: typeof statement === "string" ? statement : "" };
+		}
+		if (record.kind === "practice") return null;
+	} else if (!hasProbeDone(record.messages)) return null;
 	const pending = danglingQuestionOf(record.messages);
 	if (!pending || !CHECK_TOOLS.has(pending.tool)) return null;
 	const input = (pending.input ?? {}) as { question?: unknown; options?: unknown };

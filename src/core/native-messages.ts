@@ -316,6 +316,20 @@ export function newProblemDismissedMarker(problemCallId: string): LhMarkerMessag
 	};
 }
 
+/** How the learner ended a problem without a conclude of the agent's:
+ *  a discard, or "Show solution" (guiding sessions, owner 2026-11-03). */
+export type LearnerProblemEnding = "dismissed" | "revealed";
+
+/** The "Show solution" marker (guiding sessions, owner 2026-11-03): the
+ *  dismissal marker's twin — same customType, so every fold that frees
+ *  the slot on a dismissal frees it here too — carrying outcome
+ *  "revealed". Unlike a dismissal it HAS a face: the view renders the
+ *  committed solution off it at once; the deferred conclude pair (outcome
+ *  "revealed") is model-facing only. */
+export function newProblemRevealedMarker(problemCallId: string): LhMarkerMessage {
+	return { ...newProblemDismissedMarker(problemCallId), details: { problemCallId, outcome: "revealed" } };
+}
+
 /** The dismissal's deferred conclude (owner ruling 2026-10-04): the pair
  *  prepended to the user's NEXT input — a synthetic assistant message
  *  carrying a conclude call (outcome "dismissed") plus its ack result, so
@@ -325,6 +339,7 @@ export function newProblemDismissedMarker(problemCallId: string): LhMarkerMessag
  *  pair appends at most once per marker). */
 export function concludedByDismissalPair(
 	problemCallId: string,
+	outcome: LearnerProblemEnding = "dismissed",
 ): [LhMessage & AssistantMessage, LhMessage & ToolResultMessage] {
 	const callId = `call_conc_${problemCallId}`;
 	const now = Date.now();
@@ -350,7 +365,7 @@ export function concludedByDismissalPair(
 		{
 			id: newMessageId(),
 			role: "assistant",
-			content: [{ type: "toolCall", id: callId, name: PRACTICE_CONCLUDE_TOOL, arguments: { outcome: "dismissed" } }],
+			content: [{ type: "toolCall", id: callId, name: PRACTICE_CONCLUDE_TOOL, arguments: { outcome } }],
 			timestamp: now,
 			...syntheticStamps,
 		},
@@ -360,7 +375,7 @@ export function concludedByDismissalPair(
 			toolCallId: callId,
 			toolName: PRACTICE_CONCLUDE_TOOL,
 			content: [{ type: "text", text: CONCLUDE_ACK_TEXT }],
-			details: { outcome: "dismissed", problemCallId },
+			details: { outcome, problemCallId },
 			isError: false,
 			timestamp: now,
 		},
@@ -473,6 +488,14 @@ export function activeProblemOf(
  *  (input-events). Newest-marker-wins scan: the first dismissal marker or
  *  conclude call from the end decides. */
 export function pendingProblemDismissalOf(messages: readonly LhMessage[]): string | null {
+	return pendingProblemEndingOf(messages)?.problemCallId ?? null;
+}
+
+/** pendingProblemDismissalOf with the ending kind: a marker carrying
+ *  outcome "revealed" is a "Show solution"; any other is a discard. */
+export function pendingProblemEndingOf(
+	messages: readonly LhMessage[],
+): { problemCallId: string; outcome: LearnerProblemEnding } | null {
 	const cleanCallIds = cleanToolCallIds(messages);
 	for (let mi = messages.length - 1; mi >= 0; mi--) {
 		const m = messages[mi]!;
@@ -480,7 +503,11 @@ export function pendingProblemDismissalOf(messages: readonly LhMessage[]): strin
 		if (role === "custom") {
 			const marker = m as LhMarkerMessage;
 			if (marker.customType === "problem-dismissed") {
-				return (marker.details as { problemCallId?: unknown }).problemCallId as string;
+				const details = marker.details as { problemCallId?: unknown; outcome?: unknown };
+				return {
+					problemCallId: details.problemCallId as string,
+					outcome: details.outcome === "revealed" ? "revealed" : "dismissed",
+				};
 			}
 			continue;
 		}
@@ -742,7 +769,7 @@ export function reconstructRequestCause(messages: readonly LhMessage[]): Reconst
 			if (seen.has(id)) { if (seen.get(id) !== value) triggers.push("unrecognizable"); continue; }
 			seen.set(id, value);
 		} else if (cause !== "neutral") triggers.push("unrecognizable");
-		if (message.role === "assistant" && !(message.provider === "synthetic" && message.api === "faux" && message.model === "synthetic-conclude" && message.content.some((b) => b.type === "toolCall" && b.name === "conclude" && b.arguments?.outcome === "dismissed"))) {
+		if (message.role === "assistant" && !(message.provider === "synthetic" && message.api === "faux" && message.model === "synthetic-conclude" && message.content.some((b) => b.type === "toolCall" && b.name === "conclude" && (b.arguments?.outcome === "dismissed" || b.arguments?.outcome === "revealed")))) {
 			inherited = resolve(); triggers = [];
 		} else if (cause !== "neutral") triggers.push(cause);
 		history.push(message);

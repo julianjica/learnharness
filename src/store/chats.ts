@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
-import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PendingAside, PlanTree, TurnUsage } from "../core/contracts.ts";
+import type { ChatAttachment, ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PendingAside, PlanTree, TurnUsage } from "../core/contracts.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
@@ -33,7 +33,7 @@ function chatFile(id: string): string {
  *  phase, busy, pendingQuestion) is already announced by turn-started /
  *  turn-settled, which the sidebar refetches on. Silence here is law,
  *  not oversight. */
-function createChat(title: string, kind?: "practice"): ChatRecord {
+function createChat(title: string, kind?: "practice" | "guide"): ChatRecord {
 	const now = new Date().toISOString();
 	const record: ChatRecord = {
 		id: `chat_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`,
@@ -41,9 +41,9 @@ function createChat(title: string, kind?: "practice"): ChatRecord {
 		createdAt: now,
 		updatedAt: now,
 		messages: [],
-		// Practice sessions carry the marker; teach stays ABSENT (absence
-		// reads as teach — pre-practice records never migrate).
-		...(kind === "practice" ? { kind: "practice" as const } : {}),
+		// Practice and guiding sessions carry the marker; teach stays ABSENT
+		// (absence reads as teach — pre-practice records never migrate).
+		...(kind === "practice" || kind === "guide" ? { kind } : {}),
 	};
 	fs.mkdirSync(PATHS.chats, { recursive: true });
 	writeChat(record);
@@ -108,6 +108,7 @@ function listChats(): ChatSummary[] {
 						// NOT record-derived — the API route merges it (ChatListItem).
 						phase: phaseAt3Lh(messages),
 						pendingQuestion: danglingQuestionOf(messages) !== null,
+						pendingProblem: activeProblemOf(messages) !== null,
 					};
 				} catch (err) {
 					console.error(`[chat ${summary.id}] summary projection failed:`, err);
@@ -213,6 +214,16 @@ function deleteChat(id: string): boolean {
 	}
 }
 
+/** Record the files attached at a guiding session's creation (2026-11-03).
+ *  Silent and not conversation activity, like saveSettings. */
+function saveAttachments(id: string, attachments: ChatAttachment[]): void {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	if (attachments.length > 0) record.attachments = attachments;
+	else delete record.attachments;
+	writeChat(record);
+}
+
 /** Persist the session plan tree (plan tools call this in execute). */
 function saveTree(id: string, tree: PlanTree): void {
 	const record = getChat(id);
@@ -230,6 +241,7 @@ export const chatStore: ChatStore = {
 	saveMessages,
 	saveTree,
 	saveSettings,
+	saveAttachments,
 	renameChat,
 	deleteChat,
 	appendTurnUsage,

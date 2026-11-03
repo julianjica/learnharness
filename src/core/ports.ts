@@ -12,6 +12,7 @@
 import type { LhMessage } from "./native-messages.ts";
 import type {
 	ChatRecord,
+	ChatAttachment,
 	ChatSettings,
 	ChatSummary,
 	GraphChain,
@@ -33,9 +34,9 @@ import type { UserSettings } from "./settings.ts";
 
 export interface ChatStore {
 	/** Create a session record (persisted immediately). */
-	/** Create a session record; kind "practice" marks a practice session
-	 *  (absent = teach, the default). */
-	createChat(title: string, kind?: "practice"): ChatRecord;
+	/** Create a session record; kind "practice" or "guide" marks the
+	 *  session (absent = teach, the default). */
+	createChat(title: string, kind?: "practice" | "guide"): ChatRecord;
 	/** The full record, or null if unknown id / corrupt file. */
 	getChat(id: string): ChatRecord | null;
 	/** All sessions, newest activity first (the sidebar's list view). */
@@ -54,6 +55,8 @@ export interface ChatStore {
 	appendExtractionUsage(id: string, entry: ExtractionRunUsage): void;
 	/** Add a completed aside to the record's pending list (asides). */
 	appendPendingAside(id: string, aside: PendingAside): void;
+	/** Record a guiding session's attached files (absent when none). */
+	saveAttachments(id: string, attachments: ChatAttachment[]): void;
 	/** Persist the per-chat model/thinking settings (the model control).
 	 *  Replace-whole: the picker sends the complete settings object. */
 	saveSettings(id: string, settings: ChatSettings): void;

@@ -12,7 +12,9 @@ import { newHandoffMessage } from "../native-messages.ts";
 
 // ─── Async sub-agent jobs (vision §2.5; plan.md Wave 0 protocol) ────────────
 
-export type JobKind = "research" | "demo" | "visual" | "pdf";
+/** "transcribe" (guiding sessions, 2026-11-03): the intake job the
+ *  server dispatches at a guide's creation — no tool call fires it. */
+export type JobKind = "research" | "demo" | "visual" | "pdf" | "transcribe";
 export type JobStatus = "running" | "done" | "error";
 
 export interface JobRecord {
@@ -256,6 +258,29 @@ export interface PdfResult {
 	pagesConsulted: number[];
 }
 
+/** The guide's intake (2026-11-03): the problem set, every problem and
+ *  sub-part copied word for word (Markdown + LaTeX), from the files
+ *  attached at creation. */
+export interface TranscribeToolInput {
+	files: Array<{ name: string; path: string }>;
+}
+
+export interface TranscribeResult {
+	/** Per file: what was read, or why it failed. */
+	files: Array<{ name: string; path: string; pagesRead: number[]; failed?: string }>;
+	/** The whole transcription, file by file. Failure shape (every file
+	 *  failed): /^Transcription failed:/i. */
+	transcript: string;
+}
+
+/** Every sub-agent result shape. */
+export type SubagentResult = ResearchResult | DemoResult | VisualResult | PdfResult | TranscribeResult;
+
+/** The toolCallId stand-in of the intake job (no tool call fires it). */
+export function intakeCallId(chatId: string): string {
+	return `intake_${chatId}`;
+}
+
 // ─── Sub-agent steer messages (THE ASYNC PROTOCOL §3–4) ─────────────────────
 //
 // Wave B (owner-approved 2026-09-26): steers are NATIVE record messages —
@@ -281,7 +306,7 @@ export interface SubagentResultMeta {
 /** The data-subagent-artifact part payload: what the UI renders. */
 export interface SubagentArtifactData {
 	kind: JobKind;
-	result: ResearchResult | DemoResult | VisualResult | PdfResult;
+	result: SubagentResult;
 	/** The learner's pinned UI state (invert switch) riding the record. */
 	ui?: { inverted?: boolean };
 }
@@ -289,7 +314,7 @@ export interface SubagentArtifactData {
 /** A result steer's marker details: the UI's meta + artifact in one
  *  payload (the projection splits it into metadata + data part). */
 export interface SteerDetails extends SubagentResultMeta {
-	result: ResearchResult | DemoResult | VisualResult | PdfResult;
+	result: SubagentResult;
 	/** LEARNER UI state pinned onto the artifact (owner, 2026-10-07): the
 	 *  invert switch's position, persisted so navigating away and back (or
 	 *  restarting) keeps it. A VIEW preference — never enters the teacher's
@@ -320,7 +345,7 @@ export type SteerMessage = LhMarkerMessage;
 /** Whether a result is the failure shape (html/svg empty, failure brief). */
 export function isSubagentFailure(
 	kind: JobKind,
-	result: ResearchResult | DemoResult | VisualResult | PdfResult,
+	result: SubagentResult,
 ): boolean {
 	if (kind === "research") {
 		const r = result as ResearchResult;
@@ -334,12 +359,18 @@ export function isSubagentFailure(
 		const r = result as PdfResult;
 		return /^PDF failed:/i.test(r.brief);
 	}
+	if (kind === "transcribe") return /^Transcription failed:/i.test((result as TranscribeResult).transcript);
 	const r = result as VisualResult;
 	return typeof r.svg !== "string" || r.svg.length === 0;
 }
 
+/** The heading that opens the intake steer's model-facing text — and
+ *  the anchor compaction uses to find the problem set again. */
+export const TRANSCRIPT_HEADING =
+	"THE PROBLEM SET — transcribed word for word from the attached files. This is the exact text of every problem; quote it, never paraphrase it:";
+
 /** The model-facing text of a steer: what the result IS, what to do with it. */
-function steerText(kind: JobKind, result: ResearchResult | DemoResult | VisualResult | PdfResult): string {
+function steerText(kind: JobKind, result: SubagentResult): string {
 	if (isSubagentFailure(kind, result)) {
 		if (kind === "research")
 			return `${(result as ResearchResult).brief}\n\nContinue with what you can establish and flag the uncertainty to the learner.`;
@@ -349,10 +380,14 @@ function steerText(kind: JobKind, result: ResearchResult | DemoResult | VisualRe
 			}. Fall back to explaining in prose; if the brief was the problem, re-call demo with a tighter one.`;
 		if (kind === "pdf")
 			return `${(result as PdfResult).brief}\n\nContinue with what you can establish from the session and flag the gap to the learner.`;
+		if (kind === "transcribe")
+			return `${(result as TranscribeResult).transcript}\n\nTell the learner the attached files could not be read and ask them to paste or type the problems.`;
 		return `The figure could not be made: ${(result as VisualResult).notes ?? "unknown reason"}. Fall back to prose or mermaid, or re-call visual with a tighter brief.`;
 	}
 	if (kind === "research")
 		return `Research complete — the researcher's full brief follows. Weave it into the lesson and cite its sources when you use its findings:\n\n${(result as ResearchResult).brief}`;
+	if (kind === "transcribe")
+		return `${TRANSCRIPT_HEADING}\n\n${(result as TranscribeResult).transcript}`;
 	if (kind === "pdf")
 		return `PDF reading complete — the reader's brief on "${(result as PdfResult).path}" follows, with page citations. Weave it into the lesson and cite pages when you use it:\n\n${(result as PdfResult).brief}`;
 	if (kind === "demo")
@@ -371,7 +406,7 @@ function steerText(kind: JobKind, result: ResearchResult | DemoResult | VisualRe
  */
 export function buildSubagentSteer(
 	job: Pick<JobRecord, "id" | "kind" | "toolCallId">,
-	result: ResearchResult | DemoResult | VisualResult | PdfResult,
+	result: SubagentResult,
 ): SteerMessage {
 	return {
 		id: `steer_${job.id}`,
@@ -414,6 +449,8 @@ function abortText(kind: JobKind): string {
 		return "Research aborted — the learner aborted the research job, so no brief is coming. Acknowledge it in one line and continue teaching without it (or offer to re-dispatch it).";
 	if (kind === "demo")
 		return "The demo job was aborted by the learner — no demo is coming. Acknowledge it in one line and teach the topic in prose instead (a re-dispatch is fine if the learner wants it).";
+	if (kind === "transcribe")
+		return "The problem-set transcription was aborted by the learner — the attached files were not read. Say so in one line and ask the learner to paste or type the problems.";
 	if (kind === "pdf")
 		return "The PDF reading job was aborted by the learner — no brief is coming. Acknowledge it in one line and continue without it (a re-dispatch is fine if the learner wants it).";
 	return "The figure job was aborted by the learner — no figure is coming. Acknowledge it in one line and teach without it (a re-dispatch is fine if the learner wants it).";

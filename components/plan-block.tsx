@@ -451,11 +451,14 @@ const BOX: Record<PlanNodeStatus, string> = {
 	current: "fill-background/50 stroke-white",
 	// The grayed-out not-yet-visited look stays as-is (owner).
 	upcoming: "fill-card stroke-border",
+	// A guide's finished problem node (2026-11-03): the solved chip's green.
+	done: "fill-background/50 stroke-green-500",
 };
 const TEXT: Record<PlanNodeStatus, string> = {
 	visited: "fill-white text-xs",
 	current: "fill-white text-xs font-medium",
 	upcoming: "fill-muted-foreground/80 text-xs",
+	done: "fill-white text-xs",
 };
 // The in-chat block speaks the dock language now (owner, plan-hug
 // round 2026-10-07): boxes in the lighter background variant like

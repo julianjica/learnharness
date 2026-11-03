@@ -29,6 +29,9 @@ export const PATHS = {
 	/** Debug artifacts (env-gated): data/debug/provider-events/<chatId>.jsonl
 	 * raw provider stream recordings (src/agent/provider-events.ts). */
 	debug: path.join(DATA_ROOT, "debug"),
+	/** Files attached at a guiding session's creation (2026-11-03):
+	 *  data/attachments/<chatId>/<file>. Deleted with the session. */
+	attachments: path.join(DATA_ROOT, "attachments"),
 } as const;
 
 // ─── Models ────────────────────────────────────────────────────────────────

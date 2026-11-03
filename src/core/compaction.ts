@@ -341,6 +341,17 @@ export function serializeForSummary(messages: readonly LhMessage[]): string {
 	return lines.join("\n\n");
 }
 
+/** The guide's problem set: the newest intake transcription delivered
+ *  into the record (its steer's model-facing text), or null. */
+export function problemSetOf(messages: readonly LhMessage[]): string | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i] as LhMarkerMessage;
+		if (m.role !== "custom" || m.customType !== "subagent-steer") continue;
+		if ((m.details as { kind?: unknown } | null)?.kind === "transcribe") return m.content;
+	}
+	return null;
+}
+
 /** Render the plan dependency tree verbatim (owner requirement: the tree
  * persists through compaction). Structure from record.tree, statuses
  * derived from the transcript (the record's own law: the tree carries
@@ -376,10 +387,17 @@ export function buildCompactionPrompt(input: {
 	/** The plan tree rendered (planTreeToText) or null. */
 	planTreeText: string | null;
 	/** The session kind (wording: tutor vs practice agent). */
-	kind: "teach" | "practice" | "probe";
+	kind: "teach" | "practice" | "probe" | "guide";
+	/** Guiding sessions: the intake transcription (problemSetOf), kept
+	 *  verbatim through every compaction like the plan tree. */
+	problemSetText?: string | null;
 }): string {
 	const planSection =
 		input.planTreeText ?? "No plan tree exists in this session (nothing was persisted).";
+	const problemSetSection =
+		input.kind === "guide" && input.problemSetText
+			? `\n## The problem set\nReproduce the problem set verbatim from below — every problem and part, word for word — then, under it, one line per part posed so far: its label and how it ended (solved, solved with hints, solution viewed, moved on, dismissed) or that it is still open.\n\n${input.problemSetText}\n`
+			: "";
 	return `You are compacting the earlier part of a tutoring session — writing the summary your future self will read INSTEAD of that transcript. Everything before the cut is replaced by what you write; everything after stays verbatim. The learner's transcript below labels the learner as [LEARNER], the tutoring agent as [TUTOR], tool traffic as [RESULT …]/[SYSTEM NOTE].
 
 Write the summary with EXACTLY these sections, in this order:
@@ -394,7 +412,7 @@ How the session progressed: what was covered and in what order, which explanatio
 Reproduce the session's current plan tree verbatim from the structure below — do not drop nodes, edges, or statuses.
 
 ${planSection}
-
+${problemSetSection}
 ## The current moment
 What is happening RIGHT NOW at the cut: any question or problem awaiting the learner's answer, any commitment the agent has made that a later turn must honor, and the immediate next step.
 
