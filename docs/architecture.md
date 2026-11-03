@@ -403,6 +403,18 @@ Practice turns the graph into problem sets the learner reasons through out loud.
 
 **Model wiring.** Three roles — `partitioner`, `problemGenerator`, `grader` — all pinned to the **strong** slot (quality-critical, one settings edit from cheap) and in `BACKGROUND_MODEL_ROLES` (per-role overrides). The stage agents are single-submit loops on the shared `runSubmitAgent` seam (`submit-agent.ts`, extracted from extraction for exactly this): a `validate` hook turns a bad submit into a tool-input error the model retries against, within `maxTurns 4`; exhaustion fails the stage honestly (the set says so, the chains re-run cleanly on a new set).
 
+## 7.1 Guiding — the learner's own problem set (owner design 2026-11-03)
+
+A third session kind, `kind: "guide"`: the learner brings a goal and a problem set (PDFs attached at creation, or the problems typed in), and the guide gets them through it **by their own hand** — for each part, check the ideas it needs, teach the gaps, pose the part, coach the attempt. No probe phase. Extraction runs as in teaching.
+
+- **Entry.** The sidebar's Guide row (`/chat/new?mode=guide`) and the home composer's Teach / Practice / Guide switch. The attach control takes up to 10 PDFs of ≤ 20 MB.
+- **Attachments and intake** (`src/server/guide.ts`). `POST /api/chats {kind:"guide"}`, then one `POST /api/chats/[id]/attachments` per file (multipart `file`, magic-byte checked, stored at `data/attachments/<chatId>/`, recorded in `ChatRecord.attachments`), then `POST /api/chats/[id]/intake`. Each file rides its own request because the proxy buffers request bodies (`experimental.proxyClientMaxBodySize` sits just above the per-file cap). The folder dies with the session.
+- **The transcribe job.** The intake is a Workbench job of kind `transcribe` (toolCallId `intake_<chatId>`, no tool call fires it; its input resolves from the record's attachments on a respawn). It runs the pdf-reader in `mode: "transcribe"` once per file — every page rendered, every problem and part copied word for word in Markdown + LaTeX — and delivers ONE steer headed `TRANSCRIPT_HEADING`. That steer is the problem set for the rest of the session; compaction reproduces it verbatim under "## The problem set" (`problemSetOf`). The first turn usually runs before it lands: the guide says one line and stops; the steer wakes it.
+- **The agent** (`createGuideAgent`, `src/agent/tools/guide.ts`). The teacher's registry plus `problem` (label, `nodeId` of the problem's map node, the part verbatim, the committed `modelSolution`) and practice's `conclude`, sharing practice's one-active gate. Prompt: the base, `prompts/guide/00-guide.md`, then the teacher's method/teaching/predictions/question/jobs/demos fragments (same segment paths, so one override serves both), then shared/. The solution law: the guide never writes out a set problem's solution; worked examples use analogous problems.
+- **The map.** One node per problem (`p1`, `p2`, …) with prerequisite idea nodes feeding them. Parts pose against their problem's node. `derivePlanStatuses` gains `done`: a problem node is done once every part posed on it concluded — `solved`, `viewed` (any part revealed) or `ended`.
+- **Show solution.** In the problem dock, unlocked once the learner submitted any thinking on the part. It is the dismissal's twin: `reveal-problem` on the silent dismiss route appends a `problem-dismissed` marker with `outcome: "revealed"` (no turn, no tokens). The view renders that marker as a conclude card showing the committed solution at once; the learner's next input carries the deferred conclude pair (outcome `revealed`), which the view hides.
+- **The pause and asides.** The Next chip and Enter-on-empty apply right after a part ends (`pausedAfterPart`). Side questions anchor on an active part (delivered as a marker, like practice) or a waiting check (delivered on its answer, like teaching), answered by the guide with the teacher's side tools.
+
 ---
 
 ## 8. Process boundaries (the machine room)
@@ -556,6 +568,7 @@ Every place the architecture is designed to be cut — the "one file" a future c
 | Sub-agent verification | `sub-agents/headless.ts` (`headlessOverride`) | demo/SVG verification, no Chrome |
 | Data location (Electron) | `LH_DATA_DIR` env (`config.ts` PATHS) | where data/ lives, nothing else |
 | Local theme (owner, 2026-11-01) | `data/theme.css` (`config.ts` THEME_FILE) via `GET /api/theme.css`, linked in `app/layout.tsx` | the palette of one install — rules scoped to `html.dark` override the globals.css tokens; absent = empty stylesheet. Lives in the gitignored data dir so a licensed palette is never redistributed |
+| Guide attachments + intake (2026-11-03) | `src/server/guide.ts` (`addAttachment`, `startIntake`) | where a guide's files land and how its problem set is read |
 | Desktop host | `electron/main.cjs` | launcher/security shell only |
 
 ---

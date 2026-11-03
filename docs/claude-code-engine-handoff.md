@@ -134,3 +134,13 @@ distribute builds with it enabled.
   revisions via `plan_init` saved at once, pdf/research jobs allowed, the
   check locked while it runs. Live-checked on Claude Code opus (~19 s; it
   revised the plan unprompted). Codex side turns not yet live-checked.
+
+## Update 2026-11-03 (later): Guide sessions
+
+- New session kind `guide` (docs/architecture.md §7.1): PDFs attached at
+  creation are transcribed word for word by a `transcribe` job; the guide
+  confirms the list with one question, then per part checks the needed
+  ideas, teaches gaps, poses the part, coaches; "Show solution" unlocks
+  after any submission. Map = problem nodes + prerequisite ideas, with a
+  derived `done` status.
+- Not yet live-checked on Claude Code / Codex end to end.
