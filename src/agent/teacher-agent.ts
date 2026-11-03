@@ -15,6 +15,7 @@ import {
 	type TeacherToolContext,
 } from "./tools.ts";
 import { practiceTools, type PracticeToolContext } from "./tools/practice.ts";
+import { guideTools, type GuideToolContext } from "./tools/guide.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import { quizInputObject, quizInputProblems } from "../core/question-core.ts";
 import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
@@ -52,7 +53,7 @@ import { isCodexProvider } from "./codex/catalog.ts";
 
 /** Which agent's prompt directory to compose. Practice (2026-10-04)
  *  composes ONLY its own directory — see prompt-segments.ts. */
-export type AgentKind = "prober" | "teacher" | "practice";
+export type AgentKind = "prober" | "teacher" | "practice" | "guide";
 
 // P2 (2026-09-19): segment discovery + override resolution live in ONE
 // canonical place now — src/store/prompt-overrides.ts (listSourceSegments
@@ -92,6 +93,7 @@ const composedInstructions: Record<AgentKind, string> = {
 	prober: composeInstructions("prober"),
 	teacher: composeInstructions("teacher"),
 	practice: composeInstructions("practice"),
+	guide: composeInstructions("guide"),
 };
 
 // Money channel (wave 4): the chat-handler passes a per-turn collector;
@@ -349,8 +351,20 @@ export function createPracticeAgent(ctx: PracticeToolContext, opts: AgentBuildOp
 	return baseAgentOptions("practice", opts, Object.values(tools));
 }
 
+/**
+ * The GUIDE (guiding sessions, owner design 2026-11-03): built from turn 1
+ * of a kind:"guide" session — no probe. The teacher's registry plus the
+ * guide's problem/conclude pair (tools/guide.ts); prompts/guide/ carries
+ * the problem-set loop and the solution law.
+ */
+export function createGuideAgent(ctx: GuideToolContext, opts: AgentBuildOptions = {}) {
+	const tools = opts.tools ?? guideTools(ctx, opts.toolToggles);
+	return baseAgentOptions("guide", opts, Object.values(tools));
+}
+
 export type ProberAgent = ReturnType<typeof createProberAgent>;
 export type TeacherAgent = ReturnType<typeof createTeacherAgent>;
 export type PracticeAgent = ReturnType<typeof createPracticeAgent>;
-export type TeachingAgent = ProberAgent | TeacherAgent | PracticeAgent;
+export type GuideAgent = ReturnType<typeof createGuideAgent>;
+export type TeachingAgent = ProberAgent | TeacherAgent | PracticeAgent | GuideAgent;
 

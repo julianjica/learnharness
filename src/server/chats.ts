@@ -1,3 +1,4 @@
+import { removeAttachments } from "./guide.ts";
 import { abortExtraction, extractionStatuses } from "../agent/subagents/extraction.ts";
 import { coverageOf } from "../core/coverage.ts";
 import { deleteChatTraces, type ChatDeleteMode, type ChatDeletionStats } from "../core/graph-deletion.ts";
@@ -109,6 +110,9 @@ export async function deleteChatSession(chatId: string, mode: ChatDeleteMode): P
 	const stats = deleteChatTraces(stores.graphStore, chatId, mode);
 	const jobsRemoved = stores.jobStore.deleteJobsForChat(chatId);
 	stores.chatStore.deleteChat(chatId);
+	// A guide's attached files go with it (after the record: a crash here
+	// leaves orphan files, never a record pointing at missing ones).
+	removeAttachments(chatId);
 	return { ok: true, mode, stats, jobsRemoved, graphRevision: graphRevision() };
 }
 

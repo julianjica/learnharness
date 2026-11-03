@@ -3,12 +3,14 @@ import type { ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { PRACTICE_SIDE_TOOLS, TEACHER_SIDE_TOOLS, pickTools, runSideTurn, sideTurnMessages, sideTurnPrompt } from "../agent/aside.ts";
 import { piEngineForSpec, type PiEngine } from "../agent/models.ts";
 import { isSubscriptionProvider } from "../agent/subscription-connections.ts";
-import { createPracticeAgent, createTeacherAgent, type TeachingAgent } from "../agent/teacher-agent.ts";
+import { createGuideAgent, createPracticeAgent, createTeacherAgent, type TeachingAgent } from "../agent/teacher-agent.ts";
+import { guideTools } from "../agent/tools/guide.ts";
 import { createTeacherTools } from "../agent/tools.ts";
 import { practiceTools } from "../agent/tools/practice.ts";
 import { asideAnchorOf, asidesFor } from "../core/asides.ts";
 import type { AsideJob, AsidePlanRevision, PendingAside } from "../core/contracts/asides.ts";
 import type { CallUsage, PlanTree } from "../core/contracts.ts";
+import type { LhMessage } from "../core/native-messages.ts";
 import { modelsNotConfigured, providerKeyMissing as providerKeyMissingEnvelope } from "../core/settings.ts";
 import { graphToolsEnabled, resolveConversationSpec } from "../core/settings-resolution.ts";
 import { spawnLessonJob } from "./chat-handler.ts";
@@ -99,6 +101,11 @@ export async function handleAsideRequest(chatId: string, req: Request): Promise<
 			...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
 		};
 		agent = createPracticeAgent(ctx, { ...agentOpts, tools: pickTools(practiceTools(ctx), PRACTICE_SIDE_TOOLS) });
+	} else if (record.kind === "guide") {
+		// The guide answers like the teacher: the same side tools (plan
+		// rewrite, lookups, pdf/research jobs) — never problem/conclude.
+		const ctx = { chatId, chatStore: stores.chatStore, jobStore: stores.jobStore, spawn: jobs.spawn, searchAvailable };
+		agent = createGuideAgent(ctx, { ...agentOpts, tools: pickTools(guideTools(ctx, effective.agent.tools), TEACHER_SIDE_TOOLS) });
 	} else {
 		const ctx = { chatId, chatStore: stores.chatStore, jobStore: stores.jobStore, spawn: jobs.spawn, searchAvailable };
 		agent = createTeacherAgent(ctx, { ...agentOpts, tools: pickTools(createTeacherTools(ctx, effective.agent.tools), TEACHER_SIDE_TOOLS) });
@@ -178,12 +185,24 @@ function persist(chatId: string, aside: PendingAside, steps: CallUsage[]): void 
 	const record = stores.chatStore.getChat(chatId);
 	if (!record) return;
 	const current = asideAnchorOf(record);
-	if (record.kind === "practice" || current?.anchorId === aside.anchorId) {
+	// Problem anchors (practice, and a guide's parts) deliver as a marker
+	// with the next input, so they always keep; a check's asides keep only
+	// while that check still waits.
+	const problemAnchor = record.kind === "practice" || (record.kind === "guide" && isProblemCall(record.messages, aside.anchorId));
+	if (problemAnchor || current?.anchorId === aside.anchorId) {
 		stores.chatStore.appendPendingAside(chatId, aside);
 	} else {
 		console.info(`[aside ${chatId}] check answered while the aside ran — not delivered`);
 	}
 	logUsage(chatId, aside.id, aside.model ?? "", steps);
+}
+
+function isProblemCall(messages: readonly LhMessage[], callId: string): boolean {
+	return messages.some(
+		(m) =>
+			(m as { role?: string }).role === "assistant" &&
+			(m as { content: { type: string; id?: string; name?: string }[] }).content.some((b) => b.type === "toolCall" && b.id === callId && b.name === "problem"),
+	);
 }
 
 function logUsage(chatId: string, id: string, model: string, steps: CallUsage[]): void {

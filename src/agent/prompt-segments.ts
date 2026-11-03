@@ -42,6 +42,13 @@ const PROMPTS_DIR = path.join(PATHS.root, "src", "agent", "prompts");
  *  (practice has no such tools). */
 const PRACTICE_SHARED_FRAGMENTS = ["10-voice.md", "15-accuracy.md", "16-mental-model.md", "40-formatting.md"];
 
+/** The teacher fragments the GUIDE composes (guiding sessions, owner
+ *  plan 2026-11-03): the method, teaching, predictions, question craft,
+ *  jobs, demos. The teacher's planning fragment stays out: the guide
+ *  plans a problem set (guide/00-guide.md). Same segment paths as the
+ *  teacher's, so one override serves both. */
+const GUIDE_TEACHER_FRAGMENTS = ["05-method.md", "20-teaching.md", "28-predictions.md", "30-question-principles.md", "40-jobs.md", "50-demos.md"];
+
 /** Absolute path for an override file (unchecked — validate first). */
 function overrideFileFor(segmentPath: string): string {
 	return path.join(PROMPTS_OVERRIDE_DIR, ...segmentPath.split("/"));
@@ -79,6 +86,12 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
 		const fragments = fs.readdirSync(dir).filter((f) => FRAGMENT_RE.test(f)).sort();
 		for (const f of fragments) {
 			segments.push({ path: `${agent}/${f}`, shared: false, file: path.join(dir, f) });
+		}
+	}
+	if (agent === "guide") {
+		const teacherDir = path.join(PROMPTS_DIR, "teacher");
+		for (const f of GUIDE_TEACHER_FRAGMENTS) {
+			if (fs.existsSync(path.join(teacherDir, f))) segments.push({ path: `teacher/${f}`, shared: true, file: path.join(teacherDir, f) });
 		}
 	}
 	const sharedDir = path.join(PROMPTS_DIR, "shared");
@@ -127,7 +140,7 @@ export function effectivePromptSegments(
 /** Every known segment path across both agents (route validation). */
 export function allSegmentPaths(): string[] {
 	const paths = new Set<string>();
-	for (const agent of ["prober", "teacher", "practice"] as const) {
+	for (const agent of ["prober", "teacher", "practice", "guide"] as const) {
 		for (const segment of listSourceSegments(agent)) paths.add(segment.path);
 	}
 	return [...paths].sort();

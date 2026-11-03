@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+	// Guiding sessions upload each attached PDF on its own request, up to
+	// 20 MB (src/server/guide.ts). The proxy (proxy.ts, every /api route)
+	// buffers request bodies and silently truncates past this cap
+	// (default 10 MB), so it sits just above the per-file limit.
+	experimental: {
+		proxyClientMaxBodySize: "21mb",
+	},
 	// Desktop target (Electron wrapper, 2026-09-17): standalone output = a
 	// self-contained .next/standalone/server.js the Electron shell spawns
 	// on 127.0.0.1. Harmless for plain web deploys (extra build output).

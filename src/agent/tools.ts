@@ -351,7 +351,7 @@ export function createProberTools(
 
 /** The nodeId-against-live-tree check the teacher's quiz chains after the
  *  shared authoring contract (the old superRefine, verbatim). */
-function nodeIdProblem(ctx: Pick<PlanToolContext, "chatId" | "chatStore">, nodeId: string): string | null {
+export function nodeIdProblem(ctx: Pick<PlanToolContext, "chatId" | "chatStore">, nodeId: string): string | null {
 	const record = ctx.chatStore.getChat(ctx.chatId);
 	const known = record?.tree?.nodes.map((n) => n.id) ?? [];
 	if (!known.includes(nodeId)) {

@@ -1,6 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import {
 	createPracticeAgent,
+	createGuideAgent,
 	createProberAgent,
 	createTeacherAgent,
 	type AgentBuildOptions,
@@ -251,12 +252,12 @@ export async function handleChatInput(
 			engine: piEngineForSpec(conversation, true),
 			canStart: () => connectionBackgroundAllowed(conversation.provider),
 			modelId: modelIdForCompaction,
-			kind: record.kind === "practice" ? "practice" : hasProbeDone(record.messages) ? "teach" : "probe",
+			kind: record.kind === "practice" || record.kind === "guide" ? record.kind : hasProbeDone(record.messages) ? "teach" : "probe",
 			thresholdTokens: effectiveThresholdTokens(
 				effective.compaction?.thresholdTokens,
 				catalogContextLimits().get(modelIdForCompaction),
 			),
-			systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" ? "practice" : "teacher").length / 4),
+			systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" || record.kind === "guide" ? record.kind : "teacher").length / 4),
 		},
 		chatId,
 	);
@@ -425,6 +426,18 @@ export async function handleChatInput(
 					},
 					agentOpts,
 				)
+			: record.kind === "guide"
+			? createGuideAgent(
+					{
+						chatId,
+						chatStore: stores.chatStore,
+						jobStore: stores.jobStore,
+						spawn: (job, input) => void jobRunner.runJob(job.id, input),
+						searchAvailable,
+						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+					},
+					agentOpts,
+				)
 			: teaching
 			? createTeacherAgent(
 					{
@@ -580,12 +593,12 @@ export async function handleChatInput(
 							engine: kickEngine,
 							canStart: () => connectionBackgroundAllowed(spec.provider),
 							modelId: kickModelId,
-							kind: freshRecord.kind === "practice" ? "practice" : hasProbeDone(freshRecord.messages) ? "teach" : "probe",
+							kind: freshRecord.kind === "practice" || freshRecord.kind === "guide" ? freshRecord.kind : hasProbeDone(freshRecord.messages) ? "teach" : "probe",
 							thresholdTokens: effectiveThresholdTokens(
 								fresh.compaction?.thresholdTokens,
 								catalogContextLimits().get(kickModelId),
 							),
-							systemPromptTokens: Math.ceil(composeInstructions(freshRecord.kind === "practice" ? "practice" : "teacher").length / 4),
+							systemPromptTokens: Math.ceil(composeInstructions(freshRecord.kind === "practice" || freshRecord.kind === "guide" ? freshRecord.kind : "teacher").length / 4),
 						};
 					}, chatId);
 			},

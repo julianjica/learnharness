@@ -54,7 +54,39 @@ Your FINAL assistant message is your entire deliverable — it must stand alone,
 claim cited as (p. N). End with a line "Pages consulted: N, N, …" listing every page you
 extracted or rendered.`;
 
+/** The guide's intake (2026-11-03): the same reader, a different job —
+ *  copy every problem out word for word instead of writing a brief. */
+const TRANSCRIBE_INSTRUCTIONS = `You are a transcription specialist. You work for a tutor inside a learning application: the
+learner attached this PDF as the problem set they need help with. Copy every problem out of it,
+word for word, so the tutor can work from the exact text.
+
+You operate in an isolated context. The task gives you the PDF path — that is everything you know.
+
+Reading doctrine:
+1. TRIAGE FIRST: call pdf_info. Never read or render anything before this.
+2. Extract the text of every page, then RENDER every page that carries any math, figure, table or
+   layout the text layer could garble (for a problem set: nearly all of them). Read the rendered
+   page as the source of truth — extracted text only helps you find things.
+3. Render at 150 DPI by default, 200 for dense small print. At most 6 pages per render call.
+
+What to write — your FINAL assistant message is the transcription and nothing else:
+- Every problem, in the document's order, under a heading with its own number exactly as printed
+  ("## Problem 3", "## Exercise 2.4"), followed by its text word for word.
+- Sub-parts keep their own labels — (a), (b), (i), … — each on its own line or paragraph.
+- All math in LaTeX: $...$ inline, $$...$$ on their own lines for display math. Reproduce symbols,
+  indices and constants exactly as printed.
+- Figures and tables: a table as a Markdown table; a figure as a short bracketed description of
+  exactly what it shows ("[Figure: a graph with vertices 1–4 and edges …]").
+- Keep instructions, hints, given data and point values that belong to a problem. Skip page
+  headers, footers and course boilerplate. Put any front matter that applies to every problem
+  (notation, standing assumptions) first, under "## Preamble".
+- Never solve, summarize, reword, or add anything. If a passage is illegible, write
+  "[illegible]" there instead of guessing.
+- End with a line "Pages read: N, N, …".`;
+
 const MAX_ITERATIONS = 14;
+/** Transcription reads every page (renders cap at 6 per call). */
+const TRANSCRIBE_MAX_ITERATIONS = 40;
 /** Rendered pages per pdf_render call — the skill renders selectively; a
  *  batch cap keeps one over-eager call from flooding the vision context. */
 const RENDER_BATCH_CAP = 6;
@@ -70,6 +102,10 @@ export interface PdfReaderOptions {
 	maxIterations?: number;
 	/** Debug: raw provider-event recording key (LH_PROVIDER_EVENTS=1). */
 	chatId?: string;
+	/** "transcribe" (guiding sessions' intake): copy every problem out word
+	 *  for word instead of writing a brief. The result's `brief` carries
+	 *  the transcription; `question` is ignored. */
+	mode?: "brief" | "transcribe";
 }
 
 export interface PdfReaderInput extends PdfToolInput {}
@@ -165,7 +201,8 @@ export async function runPdfReaderAgent(
 	opts: PdfReaderOptions = {},
 ): Promise<PdfResult> {
 	const headless = opts.headless ?? getHeadless();
-	const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
+	const transcribe = opts.mode === "transcribe";
+	const maxIterations = opts.maxIterations ?? (transcribe ? TRANSCRIBE_MAX_ITERATIONS : MAX_ITERATIONS);
 	const pdfPath = input.path;
 
 	// Deterministic upfront failure: unreadable / unparseable
@@ -185,12 +222,14 @@ export async function runPdfReaderAgent(
 	// factory pin to consult (engine.level is the resolved/clamped value).
 	const reasoning = engine.level;
 	const sessionId = randomUUID();
-	const prompt = [
-		`PDF path: ${pdfPath}`,
-		`Question (what the teacher needs from this document): ${input.question || "(no question — give a structural overview)"}`,
-		"",
-		"Read the document per your doctrine, then produce your final brief in the required format.",
-	].join("\n");
+	const prompt = transcribe
+		? [`PDF path: ${pdfPath}`, "", "Read every page per your doctrine, then write the full transcription as your final message."].join("\n")
+		: [
+				`PDF path: ${pdfPath}`,
+				`Question (what the teacher needs from this document): ${input.question || "(no question — give a structural overview)"}`,
+				"",
+				"Read the document per your doctrine, then produce your final brief in the required format.",
+			].join("\n");
 
 	let messages: Message[] = [{ role: "user", content: prompt, timestamp: Date.now() }];
 	/** Every page the reader extracted or rendered (the citation set). */
@@ -206,7 +245,7 @@ export async function runPdfReaderAgent(
 		for (let iteration = 0; iteration < maxIterations; iteration++) {
 			const result = await streamOnce(
 				engine,
-				INSTRUCTIONS,
+				transcribe ? TRANSCRIBE_INSTRUCTIONS : INSTRUCTIONS,
 				messages,
 				toolDeclarations,
 				sessionId,

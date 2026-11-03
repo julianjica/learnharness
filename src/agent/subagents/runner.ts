@@ -14,6 +14,9 @@ import {
 	type ResearchResult,
 	type ResearchToolInput,
 	type SteerMessage,
+	type SubagentResult,
+	type TranscribeResult,
+	type TranscribeToolInput,
 	type UsageStepLike,
 	type VisualResult,
 	type VisualToolInput,
@@ -60,8 +63,9 @@ export const demoModelOverride: { current?: PiEngine } = {};
 export const visualModelOverride: { current?: PiEngine } = {};
 export const pdfModelOverride: { current?: PiEngine } = {};
 
-/** The dispatch-time tool input (from src/agent/tools/jobs.ts schemas). */
-type JobToolInput = ResearchToolInput | DemoToolInput | VisualToolInput | PdfToolInput;
+/** The dispatch-time tool input (from src/agent/tools/jobs.ts schemas;
+ *  transcribe's comes from the record's attachments). */
+type JobToolInput = ResearchToolInput | DemoToolInput | VisualToolInput | PdfToolInput | TranscribeToolInput;
 
 export interface JobRunnerDeps {
 	chatStore: ChatStore;
@@ -122,6 +126,8 @@ const KIND_ROLE: Record<JobKind, ModelRole> = {
 	demo: "demoBuilder",
 	visual: "visualMaker",
 	pdf: "pdfReader",
+	// The guide's intake reads PDFs too: the same slot, the same reader.
+	transcribe: "pdfReader",
 };
 
 export function createJobRunner(deps: JobRunnerDeps): JobRunner {
@@ -185,6 +191,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 		demo: (jobId, engine, input, loop) => runDemoJob(jobId, engine, input, loop),
 		visual: (jobId, engine, input, loop) => runVisualJob(jobId, engine, input, loop),
 		pdf: (jobId, engine, input, loop) => runPdfJob(jobId, engine, input, loop),
+		transcribe: (jobId, engine, input, loop) => runTranscribeJob(jobId, engine, input, loop),
 	};
 
 	async function runJob(jobId: string, input?: JobToolInput): Promise<void> {
@@ -218,8 +225,10 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 				| PdfToolInput
 				| undefined;
 			const pdf = resolved as PdfToolInput | undefined;
-			const failure: ResearchResult | DemoResult | VisualResult | PdfResult =
-				job.kind === "research"
+			const failure: SubagentResult =
+				job.kind === "transcribe"
+					? { files: [], transcript: `Transcription failed: ${reason}` }
+					: job.kind === "research"
 					? { brief: `Research failed: ${reason}`, sources: [] }
 					: job.kind === "demo"
 						? {
@@ -280,6 +289,10 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 		if (input) return input;
 		const chat = chatStore.getChat(job.chatId);
 		if (!chat) return undefined;
+		// The intake has no tool call: its input is the record's attachments.
+		if (job.kind === "transcribe") {
+			return { files: (chat.attachments ?? []).map(({ name, path: filePath }) => ({ name, path: filePath })) };
+		}
 		// Wave D: the record is native history — the scan reads the native
 		// assistant blocks directly (a toolCall's arguments are the input).
 		for (const m of chat.messages) {
@@ -300,7 +313,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 	 * actually resumed — until then the job reads "running" so the client's
 	 * activity card keeps polling and re-syncs once, at the end.
 	 */
-	async function finishJob(jobId: string, result: ResearchResult | DemoResult | VisualResult | PdfResult): Promise<void> {
+	async function finishJob(jobId: string, result: SubagentResult): Promise<void> {
 		const job = jobStore.getJob(jobId);
 		if (!job) return;
 		// Aborted mid-run or mid-delivery (abortJob flips the record before
@@ -507,6 +520,65 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 			if (stillRunning(jobId)) jobStore.updateJob(jobId, { error: reason });
 			await finishJob(jobId, { path, question, brief: `PDF failed: ${reason}`, pagesRead: [], pagesConsulted: [] });
 		}
+	}
+
+	// ─── the guide's intake (guiding sessions, 2026-11-03) ───────────────────
+
+	/** Transcribe every attached file, one reader run per file, in order;
+	 *  one steer carries the whole problem set. A file that fails is named
+	 *  in the transcript; only an all-files failure takes the failure shape. */
+	async function runTranscribeJob(
+		jobId: string,
+		model: PiEngine | undefined,
+		passedInput: JobToolInput | undefined,
+		loop: LoopContext,
+	): Promise<void> {
+		const ctx = jobContext(jobId);
+		if (!ctx) return;
+		const input = resolveInput(ctx.job, passedInput) as TranscribeToolInput | undefined;
+		const files = Array.isArray(input?.files) ? input.files : [];
+		if (files.length === 0) {
+			await finishJob(jobId, { files: [], transcript: "Transcription failed: no files were attached." });
+			return;
+		}
+		const out: TranscribeResult["files"] = [];
+		const sections: string[] = [];
+		for (const [i, file] of files.entries()) {
+			if (loop.abortSignal.aborted) return;
+			const tag = files.length > 1 ? ` (${i + 1}/${files.length})` : "";
+			jobStore.updateJob(jobId, { activity: `transcribing ${file.name}${tag}` });
+			try {
+				const r = await runPdfReaderAgent(
+					{ path: file.path, question: "" },
+					{
+						mode: "transcribe",
+						engine: model,
+						abortSignal: loop.abortSignal,
+						chatId: loop.chatId,
+						onUsage: (usage) => loop.onUsage(piUsageToStep(usage)),
+						onActivity: (line) => jobStore.updateJob(jobId, { activity: `${file.name}${tag}: ${line}` }),
+					},
+				);
+				if (isPdfFailure(r)) {
+					out.push({ name: file.name, path: file.path, pagesRead: [], failed: r.brief.replace(/^PDF failed:\s*/i, "") });
+					sections.push(`# ${file.name}\n\n[This file could not be read: ${r.brief.replace(/^PDF failed:\s*/i, "")}]`);
+				} else {
+					out.push({ name: file.name, path: file.path, pagesRead: r.pagesRead });
+					sections.push(`# ${file.name}\n\n${r.brief}`);
+				}
+			} catch (err) {
+				if (loop.abortSignal.aborted) return;
+				const reason = err instanceof Error ? err.message : String(err);
+				out.push({ name: file.name, path: file.path, pagesRead: [], failed: reason });
+				sections.push(`# ${file.name}\n\n[This file could not be read: ${reason}]`);
+			}
+		}
+		const allFailed = out.every((f) => f.failed !== undefined);
+		const transcript = allFailed
+			? `Transcription failed: ${out.map((f) => `${f.name} — ${f.failed}`).join("; ")}`
+			: sections.join("\n\n");
+		if (allFailed && stillRunning(jobId)) jobStore.updateJob(jobId, { error: transcript.replace(/^Transcription failed:\s*/i, "") });
+		await finishJob(jobId, { files: out, transcript });
 	}
 
 	return { runJob };
