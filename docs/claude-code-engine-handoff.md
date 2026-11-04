@@ -153,4 +153,6 @@ distribute builds with it enabled.
   changes the tool set on the next turn (Claude Code resumes with a new system prompt; Codex
   reseeds its thread).
 - Partner style marks problems done with `mark_done`, only after the learner says yes.
-- Not yet live-checked on Claude Code / Codex.
+- Not yet live-checked on Claude Code / Codex. Include this case in the live check: flip
+  coach→partner while a part is active. The next input then carries a synthetic `conclude`
+  call, a tool the partner registry no longer declares (Claude Code `render.ts`, Codex reseed).
