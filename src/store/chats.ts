@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
-import type { ChatAttachment, ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PendingAside, PlanTree, TurnUsage } from "../core/contracts.ts";
+import type { ChatAttachment, ChatRecord, GuideStyle, ChatSettings, ChatSummary, ExtractionRunUsage, PendingAside, PlanTree, TurnUsage } from "../core/contracts.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
@@ -224,6 +224,15 @@ function saveAttachments(id: string, attachments: ChatAttachment[]): void {
 	writeChat(record);
 }
 
+/** Set a guiding session's style (2026-11-04). Silent and not
+ *  conversation activity, like saveSettings. */
+function saveGuideStyle(id: string, style: GuideStyle): void {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	record.guideStyle = style;
+	writeChat(record);
+}
+
 /** Persist the session plan tree (plan tools call this in execute). */
 function saveTree(id: string, tree: PlanTree): void {
 	const record = getChat(id);
@@ -242,6 +251,7 @@ export const chatStore: ChatStore = {
 	saveTree,
 	saveSettings,
 	saveAttachments,
+	saveGuideStyle,
 	renameChat,
 	deleteChat,
 	appendTurnUsage,

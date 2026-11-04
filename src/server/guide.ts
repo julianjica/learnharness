@@ -13,7 +13,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
-import { intakeCallId, type ChatAttachment } from "../core/contracts.ts";
+import { guideStyleOf, intakeCallId, type ChatAttachment, type GuideStyle } from "../core/contracts.ts";
+import { guideStyleSwitchAppends } from "../core/input-events.ts";
+import { emit } from "../core/events.ts";
+import { isTurnRunning } from "./turn-liveness.ts";
 import { ensureGuideIntake } from "./chat-handler.ts";
 import { stores } from "./stores.ts";
 
@@ -82,4 +85,22 @@ export function startIntake(chatId: string): { jobId: string } | null {
 /** Remove a session's attachment folder (session deletion). */
 export function removeAttachments(chatId: string): void {
 	fs.rmSync(chatDir(chatId), { recursive: true, force: true });
+}
+
+/** Flip a guiding session's style (owner design 2026-11-04). Atomic and
+ *  silent like a dismissal: anything waiting is discarded, the style is
+ *  saved, the style marker lands, nothing wakes — the learner's next
+ *  input carries it to the guide. 409 while a turn runs (the client stops
+ *  it and retries); a no-op when the style is already set. */
+export function switchGuideStyle(chatId: string, style: GuideStyle): { changed: boolean } {
+	const record = stores.chatStore.getChat(chatId);
+	if (!record) throw new AttachmentError("Unknown chat", 404);
+	if (record.kind !== "guide") throw new AttachmentError("Styles belong to guiding sessions", 400);
+	if (guideStyleOf(record) === style) return { changed: false };
+	if (isTurnRunning(chatId)) throw new AttachmentError("The guide is mid-reply", 409);
+	const appends = guideStyleSwitchAppends(record, style);
+	stores.chatStore.saveMessages(chatId, [...record.messages, ...appends]);
+	stores.chatStore.saveGuideStyle(chatId, style);
+	emit("record-changed", { chatId });
+	return { changed: true };
 }

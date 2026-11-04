@@ -65,6 +65,7 @@ import { GraphContextCard, type GraphContextData } from "@/components/graph-cont
 import { TopBar } from "@/components/top-bar";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, TurnUsage, SessionPricing } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
+import type { GuideStyle } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
 import {
 	CompactionCutDivider,
@@ -209,6 +210,7 @@ export function Chat({
 	initiallyCompacting = false,
 	initialConfigured = false,
 	kind = "teach",
+	initialGuideStyle = "coach",
 	initialPendingAsides,
 }: {
 	chatId: string;
@@ -218,6 +220,9 @@ export function Chat({
 	 *  renders no phase chip (no probe→teach arc applies) and a Practice
 	 *  tag rides the header instead. */
 	kind?: "teach" | "practice" | "guide";
+	/** Guiding sessions: the record's style at mount (guide styles,
+	 *  2026-11-04). Later flips arrive as guide-style markers. */
+	initialGuideStyle?: GuideStyle;
 	initialPrompt?: string;
 	/** A teacher turn is running server-side but attached to no client
 	 * (navigated away mid-turn, returned while in flight). */
@@ -485,6 +490,11 @@ export function Chat({
 	// question waits or a practice problem is active — never during the
 	// probe. Folded from the native record, the server's own rule.
 	const asideAnchor = useMemo(() => asideAnchorOf({ messages: nativeMessages, kind }), [nativeMessages, kind]);
+	// The guide's style (2026-11-04): the latest guide-style marker wins,
+	// else the record's style at mount.
+	const guideStyle = useMemo<GuideStyle>(() => latestGuideStyle(nativeMessages) ?? initialGuideStyle, [nativeMessages, initialGuideStyle]);
+	const [styleSwitching, setStyleSwitching] = useState(false);
+	const [styleError, setStyleError] = useState<string | null>(null);
 	const asides = useAsides(chatId, asideAnchor?.anchorId ?? null, initialPendingAsides);
 	asidesSettledRef.current = asides.settled;
 	// Delivered asides render where they landed (the practice marker) —
@@ -730,7 +740,7 @@ export function Chat({
 		!busy &&
 		// A guide teaches between parts too: the pause is only right after
 		// a part ended (no check or new part since).
-		(kind !== "guide" || pausedAfterPart(nativeMessages)) &&
+		(kind !== "guide" || (guideStyle === "coach" && pausedAfterPart(nativeMessages))) &&
 		nativeMessages.some(
 			(m) => (m as { role?: string }).role === "assistant" &&
 				Array.isArray((m as { content?: unknown[] }).content) &&
@@ -770,6 +780,41 @@ export function Chat({
 			void send({ type: "continue" });
 		}
 	}, [chatId, setMessages, send, status]);
+
+	/* THE STYLE FLIP (guide styles, owner 2026-11-04): one server write
+	 * discards whatever waits (check, part), saves the style and lands the
+	 * divider marker — nothing wakes. A running reply is stopped first;
+	 * the route answers 409 until that turn has settled, so retry. */
+	const switchGuideStyle = useCallback(
+		async (next: GuideStyle) => {
+			if (styleSwitching) return;
+			setStyleSwitching(true);
+			setStyleError(null);
+			try {
+				if (busyRef.current) abortInFlightTurn();
+				for (let attempt = 0; ; attempt++) {
+					const res = await fetch(`/api/chats/${chatId}/guide-style`, {
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ style: next }),
+					});
+					if (res.ok) break;
+					if (res.status === 409 && attempt < 40) {
+						await new Promise((r) => setTimeout(r, 250));
+						continue;
+					}
+					const body = (await res.json().catch(() => null)) as { error?: string } | null;
+					throw new Error(body?.error ?? `Switching style failed (${res.status}).`);
+				}
+				await syncFromServer();
+			} catch (err) {
+				setStyleError((err as Error).message);
+			} finally {
+				setStyleSwitching(false);
+			}
+		},
+		[abortInFlightTurn, chatId, styleSwitching, syncFromServer],
+	);
 
 	// The settled terminal's other half (stream-reattach wave): the
 	// transport resolved turn-settled — no turn running, the record is
@@ -1342,15 +1387,12 @@ export function Chat({
 					{/* Practice sessions: no phase arc — a quiet Practice tag
 					    instead of the phase chip. */}
 					{kind === "guide" ? (
-						<span
-							data-testid="phase-chip"
-							data-phase="guide"
-							aria-hidden="true"
-							className="pointer-events-none flex shrink-0 select-none items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-						>
-							<CompassIcon className="size-3" />
-							Guide
-						</span>
+						<GuideStyleToggle
+							style={guideStyle}
+							disabled={styleSwitching || compacting}
+							error={styleError}
+							onSwitch={(next) => void switchGuideStyle(next)}
+						/>
 					) : kind === "practice" ? (
 						<span
 							data-testid="phase-chip"
@@ -1418,6 +1460,18 @@ export function Chat({
 												return <ThinkingCard key={pi} data={part.data as PracticeThinkingData} />;
 											case "data-asides":
 												return <AsideList key={pi} asides={(part.data as { asides?: PendingAside[] } | null)?.asides ?? []} />;
+											case "data-guide-style":
+												// The style flip (2026-11-04): the Next-problem register.
+												return (
+													<div
+														key={pi}
+														data-testid="guide-style-line"
+														className="my-4 flex items-center justify-center gap-1.5 font-ui text-xs font-medium uppercase tracking-wide text-muted-foreground"
+													>
+														<CompassIcon className="size-3" />
+														{(part.data as { style?: GuideStyle } | null)?.style === "partner" ? "Switched to partner style" : "Switched to check & coach style"}
+													</div>
+												);
 											case "data-practice-next":
 												// The learner's move-on signal (owner round 16): a compact
 												// centered mono-caps line — chrome, the dismissal register.
@@ -1886,6 +1940,61 @@ export function probeArrivalExpanded(isAtBottom: boolean): boolean {
 /** A guiding session's between-parts pause: the newest part-or-check
  *  event in the record is a part's ending (a conclude, or the learner's
  *  Show solution / discard marker). Pure for tests. */
+/** The latest guide-style marker's style, or null when none (2026-11-04). */
+export function latestGuideStyle(messages: readonly LhMessage[]): GuideStyle | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i] as { role?: string; customType?: string; details?: { style?: unknown } };
+		if (m.role === "custom" && m.customType === "guide-style") return m.details?.style === "partner" ? "partner" : "coach";
+	}
+	return null;
+}
+
+/** The guide header's style control (2026-11-04): the Guide tag plus a
+ *  two-way switch between check & coach and partner. */
+function GuideStyleToggle({
+	style,
+	disabled,
+	error,
+	onSwitch,
+}: {
+	style: GuideStyle;
+	disabled: boolean;
+	error: string | null;
+	onSwitch: (next: GuideStyle) => void;
+}) {
+	const options: Array<{ value: GuideStyle; label: string; hint: string }> = [
+		{ value: "coach", label: "Coach", hint: "Check & coach: checks the ideas each part needs, teaches gaps, poses parts as cards" },
+		{ value: "partner", label: "Partner", hint: "Partner: discusses the set with you in plain chat — no checks, no cards" },
+	];
+	return (
+		<span data-testid="phase-chip" data-phase="guide" className="flex shrink-0 select-none items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+			<CompassIcon className="size-3" aria-hidden="true" />
+			<span aria-hidden="true">Guide</span>
+			<span role="radiogroup" aria-label="Guide style" title={error ?? undefined} className="flex overflow-hidden rounded-md border border-border normal-case tracking-normal">
+				{options.map((o) => (
+					<button
+						key={o.value}
+						type="button"
+						role="radio"
+						aria-checked={style === o.value}
+						title={o.hint}
+						disabled={disabled || style === o.value}
+						onClick={() => onSwitch(o.value)}
+						className={
+							style === o.value
+								? "bg-muted px-1.5 py-0.5 text-foreground"
+								: "px-1.5 py-0.5 hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
+						}
+					>
+						{o.label}
+					</button>
+				))}
+			</span>
+			{error && <span role="alert" className="normal-case tracking-normal text-destructive">{error}</span>}
+		</span>
+	);
+}
+
 export function pausedAfterPart(messages: readonly LhMessage[]): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i] as { role?: string; customType?: string; content?: unknown };

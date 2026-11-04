@@ -25,7 +25,8 @@
  * turn rides one composition.
  */
 
-import type { QuestionAnswerData } from "./question-core.ts";
+import { dismissedAnswer, type QuestionAnswerData } from "./question-core.ts";
+import type { GuideStyle } from "./contracts/chat.ts";
 import type { LhMarkerMessage, LhMessage } from "./native-messages.ts";
 import type { PendingAside } from "./contracts/asides.ts";
 import { asidesFor } from "./asides.ts";
@@ -36,6 +37,7 @@ import {
 	danglingQuestionOf,
 	newAnswerResult,
 	newNextMessage,
+	newGuideStyleMarker,
 	newProblemDismissedMarker,
 	newProblemRevealedMarker,
 	newThinkingMessage,
@@ -165,6 +167,29 @@ export function dismissAppends(record: { messages: LhMessage[]; kind?: string; p
 		throw new ChatInputError("dismiss input's answer kind does not match the question");
 	}
 	return [newAnswerResult(input.toolCallId, pending.tool, withAsides(input.answer, record, input.toolCallId))];
+}
+
+/** The native appends a guide-style switch makes (guide styles, owner
+ *  design 2026-11-04 — "Switch dismisses it"): every waiting check is
+ *  skipped and the active part is discarded, through the dismissal
+ *  route's own appends, then the style marker lands. Pure; the caller
+ *  saves the style and refuses while a turn runs. */
+export function guideStyleSwitchAppends(
+	record: { messages: LhMessage[]; kind?: string; pendingAsides?: PendingAside[] },
+	style: GuideStyle,
+): LhMessage[] {
+	if (record.kind !== "guide") throw new ChatInputError("guide styles belong to guiding sessions");
+	const appends: LhMessage[] = [];
+	const view = () => ({ ...record, messages: [...record.messages, ...appends] });
+	for (let pending = danglingQuestionOf(view().messages); pending; pending = danglingQuestionOf(view().messages)) {
+		const question = (pending.input as { question?: unknown } | undefined)?.question;
+		const answer = dismissedAnswer(toolQuestionKind(pending.tool), typeof question === "string" ? question : "");
+		appends.push(...dismissAppends(view(), { type: "dismiss", toolCallId: pending.toolCallId, answer }));
+	}
+	const active = activeProblemOf(view().messages);
+	if (active) appends.push(...dismissAppends(view(), { type: "dismiss-problem", problemCallId: active.toolCallId }));
+	appends.push(newGuideStyleMarker(style));
+	return appends;
 }
 
 /** A malformed input event (the honest 400 — the orphan-trap discipline). */

@@ -39,6 +39,7 @@ import {
 	newCompactionMarker,
 	planTreeToText,
 	problemSetOf,
+	guideStyleOf,
 	serializeForSummary,
 	toLlmMessages,
 	type CompactionDetails,
@@ -212,6 +213,7 @@ async function compact(deps: CompactionDeps, chatId: string): Promise<void> {
 		// The guide's problem set survives every compaction verbatim — read
 		// from the WHOLE record (the intake may sit before an earlier cut).
 		problemSetText: deps.kind === "guide" ? problemSetOf(record.messages) : null,
+		...(deps.kind === "guide" ? { guideStyle: guideStyleOf(record) } : {}),
 	});
 
 	emit("compaction-changed", { chatId, running: true });

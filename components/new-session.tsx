@@ -11,8 +11,8 @@ import { SetupDialog } from "@/components/setup-dialog";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { StatsBar } from "@/components/stats-bar";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
-import { AttachPdfsControl, ComposerActions, NodePickerControl, addGuideFiles } from "@/components/composer-actions";
-import type { ChatSettings, GraphSnapshot } from "@/src/core";
+import { AttachPdfsControl, ComposerActions, GuideStylePicker, NodePickerControl, addGuideFiles } from "@/components/composer-actions";
+import type { ChatSettings, GraphSnapshot, GuideStyle } from "@/src/core";
 
 /** The draft's pick set (owner round 10): the SAME shape the home pick
  *  bar lifts — resolved nodes as the learner SAW them at pick time. */
@@ -80,6 +80,7 @@ export async function startGuideSession(
 	text: string,
 	files: readonly File[],
 	fetchLike: typeof fetch,
+	style: GuideStyle = "coach",
 ): Promise<string | null> {
 	const t = text.trim();
 	if (!t && files.length === 0) return null;
@@ -87,7 +88,7 @@ export async function startGuideSession(
 	const res = await fetchLike("/api/chats", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ title: goal, kind: "guide" }),
+		body: JSON.stringify({ title: goal, kind: "guide", ...(style === "partner" ? { guideStyle: "partner" } : {}) }),
 	});
 	const { id } = (await res.json()) as { id: string };
 	for (const file of files) {
@@ -221,7 +222,7 @@ export function DraftShell({
 										mode === "practice"
 											? "Pick nodes from your knowledge graph, describe what you want to practice, or bring your own problem."
 											: mode === "guide"
-												? "Attach your problem set, or type the problems, and say what you're aiming for. The guide checks what each problem needs and teaches the gaps; you solve it."
+												? "Attach your problem set, or type the problems, and say what you're aiming for. Check & coach: the guide checks what each problem needs and teaches the gaps; you solve it. Partner: you talk the set through together, no checks."
 												: "The teacher will open by probing what you already know."
 									}
 								/>
@@ -342,6 +343,9 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 	const [files, setFiles] = useState<File[]>([]);
 	const filesRef = useRef<File[]>([]);
 	const [fileNote, setFileNote] = useState<string | null>(null);
+	// The guide draft's style (2026-11-04); a ref mirror for the send.
+	const [guideStyle, setGuideStyle] = useState<GuideStyle>("coach");
+	const guideStyleRef = useRef<GuideStyle>("coach");
 	const applyFiles = (next: File[]) => {
 		filesRef.current = next;
 		setFiles(next);
@@ -365,7 +369,7 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 		}
 		setBusy(true);
 		if (mode === "guide") {
-			void startGuideSession(draft, filesRef.current, fetch)
+			void startGuideSession(draft, filesRef.current, fetch, guideStyleRef.current)
 				.then((target) => {
 					if (target) router.push(target);
 					else setBusy(false);
@@ -398,6 +402,14 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 				attachCount={files.length}
 				attach={
 					mode === "guide" ? (
+						<div className="flex flex-wrap items-center gap-1.5">
+						<GuideStylePicker
+							style={guideStyle}
+							onChange={(next) => {
+								guideStyleRef.current = next;
+								setGuideStyle(next);
+							}}
+						/>
 						<AttachPdfsControl
 							files={files}
 							note={fileNote}
@@ -411,6 +423,7 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 								setFileNote(null);
 							}}
 						/>
+						</div>
 					) : undefined
 				}
 				overlay={

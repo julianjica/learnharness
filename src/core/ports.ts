@@ -13,6 +13,7 @@ import type { LhMessage } from "./native-messages.ts";
 import type {
 	ChatRecord,
 	ChatAttachment,
+	GuideStyle,
 	ChatSettings,
 	ChatSummary,
 	GraphChain,
@@ -57,6 +58,8 @@ export interface ChatStore {
 	appendPendingAside(id: string, aside: PendingAside): void;
 	/** Record a guiding session's attached files (absent when none). */
 	saveAttachments(id: string, attachments: ChatAttachment[]): void;
+	/** Set a guiding session's style. Silent, not conversation activity. */
+	saveGuideStyle(id: string, style: GuideStyle): void;
 	/** Persist the per-chat model/thinking settings (the model control).
 	 *  Replace-whole: the picker sends the complete settings object. */
 	saveSettings(id: string, settings: ChatSettings): void;

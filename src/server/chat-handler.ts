@@ -47,6 +47,7 @@ import { registerTurn, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction } from "./turn-service.ts";
 import { hasProbeDone, danglingQuestionOf } from "../core/native-messages.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
+import { guideStyleOf } from "../core/contracts.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./compaction.ts";
 import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.ts";
 import { emit } from "../core/events.ts";
@@ -273,7 +274,7 @@ export async function handleChatInput(
 				effective.compaction?.thresholdTokens,
 				catalogContextLimits().get(modelIdForCompaction),
 			),
-			systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" || record.kind === "guide" ? record.kind : "teacher").length / 4),
+			systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" || record.kind === "guide" ? record.kind : "teacher", undefined, guideStyleOf(record)).length / 4),
 		},
 		chatId,
 	);
@@ -457,7 +458,9 @@ export async function handleChatInput(
 						searchAvailable,
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
 					},
-					agentOpts,
+					// The style picks the registry and the prompt per turn
+					// (guide styles, 2026-11-04).
+					{ ...agentOpts, style: guideStyleOf(record) },
 				)
 			: teaching
 			? createTeacherAgent(
@@ -619,7 +622,7 @@ export async function handleChatInput(
 								fresh.compaction?.thresholdTokens,
 								catalogContextLimits().get(kickModelId),
 							),
-							systemPromptTokens: Math.ceil(composeInstructions(freshRecord.kind === "practice" || freshRecord.kind === "guide" ? freshRecord.kind : "teacher").length / 4),
+							systemPromptTokens: Math.ceil(composeInstructions(freshRecord.kind === "practice" || freshRecord.kind === "guide" ? freshRecord.kind : "teacher", undefined, guideStyleOf(freshRecord)).length / 4),
 						};
 					}, chatId);
 			},

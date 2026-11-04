@@ -19,6 +19,7 @@ import { guideTools, type GuideToolContext } from "./tools/guide.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import { quizInputObject, quizInputProblems } from "../core/question-core.ts";
 import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
+import type { GuideStyle } from "../core/contracts.ts";
 import { toLlmMessages, nativeInputCause } from "../core/native-messages.ts";
 import type { ChatGPTRequestCycle } from "./chatgpt-request-cycle.ts";
 import { usageWasAdmitted } from "./subscription-request-cycle.ts";
@@ -76,8 +77,10 @@ export type AgentKind = "prober" | "teacher" | "practice" | "guide";
  *  tests/prompt-overrides.test.ts). Overrides are a static-file read
  *  through config paths, not request state — the store import carries no
  *  chat/job machinery. */
-export function composeInstructions(kind: AgentKind, switches?: Record<string, boolean>): string {
-	const segments = effectivePromptSegments(kind, switches ?? {});
+export function composeInstructions(kind: AgentKind, switches?: Record<string, boolean>, guideStyle?: GuideStyle): string {
+	// A guide always composes ONE style (absent = coach); the style-free
+	// listing (every guide fragment) is the settings editor's view only.
+	const segments = effectivePromptSegments(kind, switches ?? {}, kind === "guide" ? (guideStyle ?? "coach") : undefined);
 	return segments
 		.map((s) => (s.enabled ? s.overrideText! : s.sourceText))
 		.map((t) => t.trim())
@@ -95,6 +98,7 @@ const composedInstructions: Record<AgentKind, string> = {
 	practice: composeInstructions("practice"),
 	guide: composeInstructions("guide"),
 };
+const composedPartnerGuide = composeInstructions("guide", undefined, "partner");
 
 // Money channel (wave 4): the chat-handler passes a per-turn collector;
 // every model call's usage lands in the chat record's turns log
@@ -174,7 +178,7 @@ function makeQuestionStopper() {
 	};
 }
 
-function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: AgentTool<any, any>[]) {
+function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: AgentTool<any, any>[], guideStyle?: GuideStyle) {
 	// Practice never reaches the role fallback (the handler ALWAYS injects
 	// the session's conversation engine — practice rides the same
 	// conversation-spec resolution as teaching); the cast keeps AgentKind
@@ -182,8 +186,10 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	const engine = opts.engine ?? piEngineFor(kind as "prober" | "teacher");
 	const stopper = makeQuestionStopper();
 	const systemPrompt = opts.promptSwitches
-		? composeInstructions(kind, opts.promptSwitches)
-		: composedInstructions[kind]!;
+		? composeInstructions(kind, opts.promptSwitches, guideStyle)
+		: kind === "guide" && guideStyle === "partner"
+			? composedPartnerGuide
+			: composedInstructions[kind]!;
 	// Debug recorder (owner, 2026-10-04): raw provider events when
 	// LH_PROVIDER_EVENTS=1 and the caller handed a chatId; undefined is
 	// the normal no-observer path (tests, env-off).
@@ -357,9 +363,9 @@ export function createPracticeAgent(ctx: PracticeToolContext, opts: AgentBuildOp
  * guide's problem/conclude pair (tools/guide.ts); prompts/guide/ carries
  * the problem-set loop and the solution law.
  */
-export function createGuideAgent(ctx: GuideToolContext, opts: AgentBuildOptions = {}) {
-	const tools = opts.tools ?? guideTools(ctx, opts.toolToggles);
-	return baseAgentOptions("guide", opts, Object.values(tools));
+export function createGuideAgent(ctx: GuideToolContext, opts: AgentBuildOptions & { style?: GuideStyle } = {}) {
+	const tools = opts.tools ?? guideTools(ctx, opts.toolToggles, opts.style);
+	return baseAgentOptions("guide", opts, Object.values(tools), opts.style);
 }
 
 export type ProberAgent = ReturnType<typeof createProberAgent>;

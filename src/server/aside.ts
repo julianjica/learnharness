@@ -10,6 +10,7 @@ import { practiceTools } from "../agent/tools/practice.ts";
 import { asideAnchorOf, asidesFor } from "../core/asides.ts";
 import type { AsideJob, AsidePlanRevision, PendingAside } from "../core/contracts/asides.ts";
 import type { CallUsage, PlanTree } from "../core/contracts.ts";
+import { guideStyleOf } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { modelsNotConfigured, providerKeyMissing as providerKeyMissingEnvelope } from "../core/settings.ts";
 import { graphToolsEnabled, resolveConversationSpec } from "../core/settings-resolution.ts";
@@ -105,7 +106,8 @@ export async function handleAsideRequest(chatId: string, req: Request): Promise<
 		// The guide answers like the teacher: the same side tools (plan
 		// rewrite, lookups, pdf/research jobs) — never problem/conclude.
 		const ctx = { chatId, chatStore: stores.chatStore, jobStore: stores.jobStore, spawn: jobs.spawn, searchAvailable };
-		agent = createGuideAgent(ctx, { ...agentOpts, tools: pickTools(guideTools(ctx, effective.agent.tools), TEACHER_SIDE_TOOLS) });
+		const style = guideStyleOf(record);
+		agent = createGuideAgent(ctx, { ...agentOpts, style, tools: pickTools(guideTools(ctx, effective.agent.tools, style), TEACHER_SIDE_TOOLS) });
 	} else {
 		const ctx = { chatId, chatStore: stores.chatStore, jobStore: stores.jobStore, spawn: jobs.spawn, searchAvailable };
 		agent = createTeacherAgent(ctx, { ...agentOpts, tools: pickTools(createTeacherTools(ctx, effective.agent.tools), TEACHER_SIDE_TOOLS) });

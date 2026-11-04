@@ -144,3 +144,13 @@ distribute builds with it enabled.
   after any submission. Map = problem nodes + prerequisite ideas, with a
   derived `done` status.
 - Not yet live-checked on Claude Code / Codex end to end.
+
+## Update 2026-11-04: guide styles
+
+- Guiding sessions have a style (docs/architecture.md §7.1 "Styles"): check & coach (the
+  original) or partner (plain-chat discussion, no checks, no cards; the solution law holds).
+  It is picked at creation and flipped from the header. A flip discards anything waiting and
+  changes the tool set on the next turn (Claude Code resumes with a new system prompt; Codex
+  reseeds its thread).
+- Partner style marks problems done with `mark_done`, only after the learner says yes.
+- Not yet live-checked on Claude Code / Codex.

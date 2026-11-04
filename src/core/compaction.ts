@@ -36,6 +36,7 @@
 import type { PlanTree } from "./contracts/plan.ts";
 import { derivePlanStatusesLh, derivedNodeStatus } from "./contracts/plan.ts";
 import { COMPACTED_HISTORY_HEADER } from "./contracts/chat.ts";
+import type { GuideStyle } from "./contracts/chat.ts";
 import type { LhMessage, LhMarkerMessage } from "./native-messages.ts";
 import { newMessageId } from "./native-messages.ts";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -391,12 +392,14 @@ export function buildCompactionPrompt(input: {
 	/** Guiding sessions: the intake transcription (problemSetOf), kept
 	 *  verbatim through every compaction like the plan tree. */
 	problemSetText?: string | null;
+	/** Guiding sessions: the current style (absent = coach). */
+	guideStyle?: GuideStyle;
 }): string {
 	const planSection =
 		input.planTreeText ?? "No plan tree exists in this session (nothing was persisted).";
 	const problemSetSection =
 		input.kind === "guide" && input.problemSetText
-			? `\n## The problem set\nReproduce the problem set verbatim from below — every problem and part, word for word — then, under it, one line per part posed so far: its label and how it ended (solved, solved with hints, solution viewed, moved on, dismissed) or that it is still open.\n\n${input.problemSetText}\n`
+			? `\n## The problem set\nThis guiding session is in ${input.guideStyle === "partner" ? "PARTNER style (plain-chat discussion, no checks, no problem cards)" : "CHECK & COACH style"}. Reproduce the problem set verbatim from below — every problem and part, word for word — then, under it, one line per problem or part worked so far: its label and how it ended (solved, solved with hints, solution viewed, moved on, dismissed, marked done after discussion) or where the work on it stands.\n\n${input.problemSetText}\n`
 			: "";
 	return `You are compacting the earlier part of a tutoring session — writing the summary your future self will read INSTEAD of that transcript. Everything before the cut is replaced by what you write; everything after stays verbatim. The learner's transcript below labels the learner as [LEARNER], the tutoring agent as [TUTOR], tool traffic as [RESULT …]/[SYSTEM NOTE].
 

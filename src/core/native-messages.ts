@@ -39,10 +39,12 @@ import { QUESTION_TOOLS } from "./pending.ts";
 import {
 	ASIDES_HEADER,
 	CONCLUDE_ACK_TEXT,
+	guideStyleText,
 	HANDOFF_TEXT,
 	NEXT_PROBLEM_TEXT,
 	THINKING_LABEL,
 } from "./contracts/chat.ts";
+import type { GuideStyle } from "./contracts/chat.ts";
 import { compactAnswerForModel, type QuestionAnswerData } from "./question-core.ts";
 import type { Aside } from "./contracts/asides.ts";
 import { activeCompactionOf, keptIndexFor } from "./compaction.ts";
@@ -77,6 +79,7 @@ export interface LhMarkerMessage {
 		| "practice-next"
 		| "aside"
 		| "problem-dismissed"
+		| "guide-style"
 		| "compaction";
 	/** The model-facing text ("" for plan blocks — UI-only). */
 	content: string;
@@ -294,6 +297,21 @@ export function newNextMessage(): LhMarkerMessage {
 		content: NEXT_PROBLEM_TEXT,
 		display: true,
 		details: {},
+		timestamp: Date.now(),
+	};
+}
+
+/** The guide-style marker (owner design 2026-11-04): the learner flipped
+ *  the guiding session's style. Lands silently via the guide-style route;
+ *  the view renders a divider, the model reads guideStyleText. */
+export function newGuideStyleMarker(style: GuideStyle): LhMarkerMessage {
+	return {
+		id: newMessageId(),
+		role: "custom",
+		customType: "guide-style",
+		content: guideStyleText(style),
+		display: true,
+		details: { style },
 		timestamp: Date.now(),
 	};
 }
@@ -736,7 +754,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "custom") {
 		if (["probe-handoff", "subagent-steer", "subagent-abort"].includes(message.customType)) return "automatic";
 		if (["practice-thinking", "practice-next", "aside"].includes(message.customType)) return "learner";
-		return ["graph-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
+		return ["graph-context", "plan-block", "problem-dismissed", "guide-style", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {
 		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";

@@ -13,6 +13,11 @@
  *   - `conclude` is practice's tool, unchanged (one active part at a time,
  *     the same gate).
  *
+ * Partner style (owner design 2026-11-04): the registry drops every
+ * check and card tool (quiz/explain, problem, conclude) and adds
+ * `mark_done`, which marks a problem node done on the map. The prompt
+ * law: call it only after the learner said yes to "Mark Problem N done?".
+ *
  * Mechanics only; the method lives in prompts/guide/.
  */
 
@@ -20,6 +25,7 @@ import { Type, type Static } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createTeacherTools, nodeIdProblem, type TeacherToolContext } from "../tools.ts";
 import type { EnabledTools } from "../../core/pending.ts";
+import type { GuideStyle } from "../../core/contracts.ts";
 import { problemResult, invalidInputResult } from "../tool-execute.ts";
 import { healEncodedArguments, healToolRecord } from "./heal.ts";
 import { concludeTool, createPracticeGate, type PracticeGate } from "./practice.ts";
@@ -80,14 +86,55 @@ export function guideProblemTool(
 	};
 }
 
-/** The guide's registry: the teacher's tools plus problem/conclude and
- *  (gate open) the map readers. */
-export function guideTools(ctx: GuideToolContext, enabled?: EnabledTools): Record<string, AgentTool<any>> {
+export const markDoneInputObject = Type.Object({
+	nodeId: Type.String({
+		description: "REQUIRED — the plan-map node of the problem to mark done (one of your plan_init problem slugs).",
+	}),
+});
+
+/** Partner style's done marker (2026-11-04): server-side, instant. The
+ *  map counts it only through a clean result (plan.ts ProblemFold). */
+export function markDoneTool(
+	ctx: Pick<GuideToolContext, "chatId" | "chatStore">,
+): AgentTool<typeof markDoneInputObject> {
+	return {
+		name: "mark_done",
+		label: "mark_done",
+		description:
+			"Mark a problem from the learner's set done on the session map. Call it only after the learner has said yes " +
+			"to marking that problem done. Does not end the turn.",
+		parameters: markDoneInputObject,
+		executionMode: "sequential",
+		prepareArguments: (args: unknown) => healEncodedArguments(args, markDoneInputObject) as never,
+		execute: async (_toolCallId, input) => {
+			const nodeProblem = nodeIdProblem(ctx, input.nodeId);
+			if (nodeProblem) return invalidInputResult("mark_done", [nodeProblem]);
+			return { content: [{ type: "text", text: `Marked ${input.nodeId} done on the map.` }], details: null };
+		},
+	};
+}
+
+/** The check and card tools partner style drops. */
+const COACH_ONLY_TOOLS = ["quiz", "explain", "problem", "conclude"] as const;
+
+/** The guide's registry. Coach: the teacher's tools plus problem/conclude
+ *  and (gate open) the map readers. Partner: the same minus the check and
+ *  card tools, plus mark_done. */
+export function guideTools(
+	ctx: GuideToolContext,
+	enabled?: EnabledTools,
+	style: GuideStyle = "coach",
+): Record<string, AgentTool<any>> {
 	const gate = createPracticeGate({ chatId: ctx.chatId, chatStore: ctx.chatStore });
-	return healToolRecord({
+	const all: Record<string, AgentTool<any>> = {
 		...createTeacherTools(ctx, enabled),
 		problem: guideProblemTool(gate, ctx),
 		conclude: concludeTool(gate),
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
-	});
+	};
+	if (style === "partner") {
+		for (const name of COACH_ONLY_TOOLS) delete all[name];
+		all.mark_done = markDoneTool(ctx);
+	}
+	return healToolRecord(all);
 }

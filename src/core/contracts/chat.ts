@@ -28,6 +28,17 @@ import type { PendingAside } from "./asides.ts";
  *  practice agent, its two tools, no extraction, no graph writes. */
 export type ChatKind = "teach" | "practice" | "guide";
 
+/** A guiding session's style (owner design 2026-11-04): "coach" checks the
+ *  ideas each part needs, teaches gaps and poses parts as problem cards;
+ *  "partner" discusses the set in plain chat as a working partner — no
+ *  checks, no cards. Absent on a guide record reads as coach. */
+export type GuideStyle = "coach" | "partner";
+
+/** The record's effective guide style (absent = coach). */
+export function guideStyleOf(record: { guideStyle?: GuideStyle }): GuideStyle {
+	return record.guideStyle === "partner" ? "partner" : "coach";
+}
+
 /** A file the learner attached when creating a guiding session (owner
  *  design 2026-11-03): copied into data/attachments/<chatId>/ at
  *  creation. `path` is absolute (the agent's read/pdf tools take it
@@ -49,6 +60,9 @@ export interface ChatRecord {
 	/** Guiding sessions (2026-11-03): the problem-set files attached at
 	 *  creation. Absent everywhere else (no migration). */
 	attachments?: ChatAttachment[];
+	/** Guiding sessions: the style (absent = coach). Set at creation and
+	 *  flipped from the session header (PUT /api/chats/[id]/guide-style). */
+	guideStyle?: GuideStyle;
 	/** The session's plan tree (vision §2) — written by plan tools via saveTree. */
 	tree?: PlanTree;
 	/** Append-only usage log (observability, 2026-09): one entry per model
@@ -237,6 +251,16 @@ export const CONCLUDE_ACK_TEXT =
  *  marker; the model reads this and poses (or wraps) per the doctrine. */
 export const NEXT_PROBLEM_TEXT =
 	"[NEXT PROBLEM] — the learner's explicit go-ahead: pose the next problem now per the selection rules, or wrap the session in text if the arc is complete.";
+
+/** The guide-style marker's model-facing text (owner design 2026-11-04):
+ *  the learner flipped the guiding session's style from the header. It
+ *  lands silently (like a dismissal) and reaches the model with the
+ *  learner's next input; the system prompt's style section governs. */
+export function guideStyleText(style: GuideStyle): string {
+	return style === "partner"
+		? "[STYLE: PARTNER] — the learner switched this guiding session to partner style: from here on, discuss the problem set with them as a working partner in plain chat. No checks, no problem cards. Anything that was waiting when they switched has been discarded."
+		: "[STYLE: CHECK & COACH] — the learner switched this guiding session to check-and-coach style: from here on, check the ideas each part needs, teach the gaps, pose each part with `problem`, and coach the attempt.";
+}
 
 /** The aside marker's model-facing header (asides, owner 2026-10-26):
  *  practice sessions deliver the side thread as a marker right before the

@@ -47,4 +47,4 @@ export { sessionCost } from "./pricing.ts";
 export { planLimits } from "../agent/plan-limits.ts";
 export { handleAsideRequest, asideRuntime } from "./aside.ts";
 export { readLocalTheme } from "./theme.ts";
-export { addAttachment, startIntake, AttachmentError, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from "./guide.ts";
+export { addAttachment, startIntake, switchGuideStyle, AttachmentError, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from "./guide.ts";

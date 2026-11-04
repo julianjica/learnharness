@@ -31,6 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { PATHS, PROMPTS_OVERRIDE_DIR } from "../../config.ts";
 import { FRAGMENT_RE, isValidSegmentPath, type PromptAgent, type PromptSegmentInfo } from "../core/prompt-segments.ts";
+import type { GuideStyle } from "../core/contracts.ts";
 
 const PROMPTS_DIR = path.join(PATHS.root, "src", "agent", "prompts");
 
@@ -48,6 +49,24 @@ const PRACTICE_SHARED_FRAGMENTS = ["10-voice.md", "15-accuracy.md", "16-mental-m
  *  plans a problem set (guide/00-guide.md). Same segment paths as the
  *  teacher's, so one override serves both. */
 const GUIDE_TEACHER_FRAGMENTS = ["05-method.md", "20-teaching.md", "28-predictions.md", "30-question-principles.md", "40-jobs.md", "50-demos.md"];
+
+/** Partner style (owner design 2026-11-04) asks no checks, so the
+ *  teacher's check-method fragments stay out; jobs and demos remain. */
+const GUIDE_PARTNER_TEACHER_FRAGMENTS = ["40-jobs.md", "50-demos.md"];
+
+/** The shared fragments partner style leaves out: graded-question craft
+ *  and confidence reading (it asks no graded questions). */
+const GUIDE_PARTNER_SHARED_EXCLUDED = ["20-question-tools.md", "25-confidence.md"];
+
+/** Whether a guide/ fragment composes for a style: `*-coach.md` only for
+ *  coach, `*-partner.md` only for partner, the rest for both. No style =
+ *  the full listing (the settings editor and route validation). */
+function guideFragmentFits(file: string, style: GuideStyle | undefined): boolean {
+	if (style === undefined) return true;
+	if (/-coach\.md$/.test(file)) return style === "coach";
+	if (/-partner\.md$/.test(file)) return style === "partner";
+	return true;
+}
 
 /** Absolute path for an override file (unchecked — validate first). */
 function overrideFileFor(segmentPath: string): string {
@@ -71,7 +90,10 @@ export function readPromptOverride(segmentPath: string): string | null {
  *  the shared/ fragments (the 2026-09-27 reorder: the agent's job and
  *  method lead; the shared tool/file/format mechanics are an appendix).
  *  The exact order composeInstructions composes them in. */
-export function listSourceSegments(agent: PromptAgent): Array<{ path: string; shared: boolean; file: string }> {
+export function listSourceSegments(
+	agent: PromptAgent,
+	guideStyle?: GuideStyle,
+): Array<{ path: string; shared: boolean; file: string }> {
 	// PRACTICE (owner, 2026-10-04): its own directory plus a CURATED
 	// shared appendix — the teaching base and the question/confidence/
 	// file mechanics stay out (the doctrine contradicts them; 00-base.md
@@ -83,14 +105,17 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
 	];
 	const dir = path.join(PROMPTS_DIR, agent);
 	if (fs.existsSync(dir)) {
-		const fragments = fs.readdirSync(dir).filter((f) => FRAGMENT_RE.test(f)).sort();
+		const fragments = fs
+			.readdirSync(dir)
+			.filter((f) => FRAGMENT_RE.test(f) && (agent !== "guide" || guideFragmentFits(f, guideStyle)))
+			.sort();
 		for (const f of fragments) {
 			segments.push({ path: `${agent}/${f}`, shared: false, file: path.join(dir, f) });
 		}
 	}
 	if (agent === "guide") {
 		const teacherDir = path.join(PROMPTS_DIR, "teacher");
-		for (const f of GUIDE_TEACHER_FRAGMENTS) {
+		for (const f of guideStyle === "partner" ? GUIDE_PARTNER_TEACHER_FRAGMENTS : GUIDE_TEACHER_FRAGMENTS) {
 			if (fs.existsSync(path.join(teacherDir, f))) segments.push({ path: `teacher/${f}`, shared: true, file: path.join(teacherDir, f) });
 		}
 	}
@@ -101,6 +126,7 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
 		const sharedFragments = fs
 			.readdirSync(sharedDir)
 			.filter((f) => FRAGMENT_RE.test(f) && (allow === null || allow.includes(f)))
+			.filter((f) => !(agent === "guide" && guideStyle === "partner" && GUIDE_PARTNER_SHARED_EXCLUDED.includes(f)))
 			.sort();
 		for (const f of sharedFragments) {
 			segments.push({ path: `shared/${f}`, shared: true, file: path.join(sharedDir, f) });
@@ -118,8 +144,9 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
 export function effectivePromptSegments(
 	agent: PromptAgent,
 	switches: Record<string, boolean>,
+	guideStyle?: GuideStyle,
 ): PromptSegmentInfo[] {
-	return listSourceSegments(agent).map((segment) => {
+	return listSourceSegments(agent, guideStyle).map((segment) => {
 		let sourceText: string;
 		try {
 			sourceText = fs.readFileSync(segment.file, "utf-8");

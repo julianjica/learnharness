@@ -45,8 +45,9 @@ export type PlanNodeStatus = "current" | "visited" | "upcoming" | "done";
 /** How a guiding session's problem node ended (2026-11-03): "solved"
  *  when every concluded part was solved (with or without hints),
  *  "viewed" when any part's solution was shown, "ended" otherwise
- *  (moved on, surrendered, dismissed). */
-export type PlanProblemOutcome = "solved" | "viewed" | "ended";
+ *  (moved on, surrendered, dismissed). "worked" (2026-11-04): marked
+ *  done in partner style via `mark_done`, after the learner said yes. */
+export type PlanProblemOutcome = "solved" | "viewed" | "ended" | "worked";
 
 // ─── derived statuses: position from CALLS, never from results ─────────────
 //
@@ -110,6 +111,11 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 				if (part.state === "output-available") problems.conclude(part.input);
 				continue;
 			}
+			// Partner style's confirmed done (2026-11-04).
+			if (part.type === "tool-mark_done") {
+				if (part.state === "output-available") problems.markDone(part.input, ids);
+				continue;
+			}
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
 			if (part.type !== "tool-quiz" && part.type !== "tool-explain") continue;
@@ -136,6 +142,13 @@ class ProblemFold {
 	private outcomes = new Map<string, string[]>();
 	private openNodes = new Set<string>();
 	private finished = new Set<string>();
+	/** Partner style's mark_done (2026-11-04): done at once, outcome
+	 *  "worked" — unless a coach-posed part on it is still open. */
+	private worked = new Set<string>();
+	markDone(input: unknown, ids: ReadonlySet<string>): void {
+		const nodeId = (input as { nodeId?: unknown } | undefined)?.nodeId;
+		if (typeof nodeId === "string" && ids.has(nodeId)) this.worked.add(nodeId);
+	}
 	pose(input: unknown, ids: ReadonlySet<string>): string | null {
 		const args = input as { nodeId?: unknown; lastPart?: unknown } | undefined;
 		const nodeId = args?.nodeId;
@@ -158,6 +171,7 @@ class ProblemFold {
 	}
 	done(): Map<string, PlanProblemOutcome> {
 		const out = new Map<string, PlanProblemOutcome>();
+		for (const nodeId of this.worked) if (!this.openNodes.has(nodeId)) out.set(nodeId, "worked");
 		for (const [nodeId, list] of this.outcomes) {
 			if (this.openNodes.has(nodeId) || !this.finished.has(nodeId)) continue;
 			out.set(
@@ -222,7 +236,11 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 			if (block.type !== "toolCall") continue;
 			// Problem and conclude count through their clean results only
 			// (the honest-activation law of activeProblemOf).
-			if ((block.name === "problem" || block.name === "conclude") && !clean.has(block.id ?? "")) continue;
+			if ((block.name === "problem" || block.name === "conclude" || block.name === "mark_done") && !clean.has(block.id ?? "")) continue;
+			if (block.name === "mark_done") {
+				problems.markDone(block.arguments, ids);
+				continue;
+			}
 			if (block.name === "problem") {
 				const nodeId = problems.pose(block.arguments, ids);
 				if (nodeId && runs.at(-1) !== nodeId) runs.push(nodeId);

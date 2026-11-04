@@ -478,6 +478,16 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 			});
 			return;
 		}
+		case "guide-style": {
+			// The style flip (guiding sessions, 2026-11-04): a centered
+			// divider, the practice-next register.
+			out.push({
+				id: marker.id,
+				role: "user",
+				parts: [{ type: "data-guide-style", id: `gs_${marker.id}`, data: marker.details }],
+			});
+			return;
+		}
 		case "problem-dismissed":
 			// UI-only (the ask-style dismissal): the synthesized conclude
 			// pair — which rides the NEXT input — carries the record's face.

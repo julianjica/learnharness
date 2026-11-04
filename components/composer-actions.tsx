@@ -2,6 +2,7 @@
 
 import { useRef, type ReactNode } from "react";
 import { DumbbellIcon, PaperclipIcon, XIcon } from "lucide-react";
+import type { GuideStyle } from "@/src/core";
 
 /** Home and the draft share one wrapping action row. Picker controls lead;
  * setup is centered only when it is the sole action. */
@@ -78,6 +79,37 @@ export function addGuideFiles(current: readonly File[], picked: readonly File[])
 /** The guide's attach control (guiding sessions, owner 2026-11-03): a
  *  dashed "Attach PDFs" pill (the pick pill's register) plus one chip per
  *  attached file with its remove ×. */
+/** The guide draft's style picker (guide styles, owner 2026-11-04):
+ *  check & coach (the default) or partner. Changeable later from the
+ *  session header. */
+export function GuideStylePicker({ style, onChange }: { style: GuideStyle; onChange: (next: GuideStyle) => void }) {
+	const options: Array<{ value: GuideStyle; label: string; hint: string }> = [
+		{ value: "coach", label: "Check & coach", hint: "Checks the ideas each part needs, teaches the gaps, and poses each part for you to solve" },
+		{ value: "partner", label: "Partner", hint: "Discusses the set with you as a working partner, in plain chat — no checks" },
+	];
+	return (
+		<div role="radiogroup" aria-label="Guide style" data-testid="guide-style-picker" className="flex overflow-hidden rounded-full border border-border font-ui text-xs">
+			{options.map((o) => (
+				<button
+					key={o.value}
+					type="button"
+					role="radio"
+					aria-checked={style === o.value}
+					title={o.hint}
+					onClick={() => onChange(o.value)}
+					className={
+						style === o.value
+							? "cursor-pointer bg-accent px-3 py-1.5 text-foreground"
+							: "cursor-pointer px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+					}
+				>
+					{o.label}
+				</button>
+			))}
+		</div>
+	);
+}
+
 export function AttachPdfsControl({ files, onAdd, onRemove, note }: {
 	files: readonly File[];
 	onAdd: (picked: File[]) => void;

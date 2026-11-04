@@ -9,7 +9,9 @@
  *   - the guide's problem tool gates;
  *   - the intake: the transcribe job (runner + steer), compaction keeping
  *     the problem set verbatim, attachment storage refusals;
- *   - the guide prompt's composition.
+ *   - the guide prompt's composition;
+ *   - guide styles (2026-11-04): coach vs partner registries and
+ *     prompts, mark_done on the map, the switch's discards.
  */
 
 import assert from "node:assert/strict";
@@ -29,7 +31,10 @@ import {
 	PRACTICE_PROBLEM_TOOL,
 	type LhMessage,
 } from "../src/core/native-messages.ts";
-import { dismissAppends, inputAppends, parseDismissInput } from "../src/core/input-events.ts";
+import { dismissAppends, guideStyleSwitchAppends, inputAppends, parseDismissInput } from "../src/core/input-events.ts";
+import { danglingQuestionOf } from "../src/core/native-messages.ts";
+import { guideStyleOf } from "../src/core/contracts.ts";
+import { latestGuideStyle } from "../components/chat.tsx";
 import { projectView } from "../src/core/view.ts";
 import { derivePlanStatuses, derivePlanStatusesLh, derivedNodeStatus, type PlanTree } from "../src/core/contracts/plan.ts";
 import { buildCompactionPrompt, problemSetOf } from "../src/core/compaction.ts";
@@ -41,7 +46,7 @@ import { createJobRunner, pdfModelOverride } from "../src/agent/subagents/runner
 import type { PiEngine } from "../src/agent/models.ts";
 import { chatStore } from "../src/store/chats.ts";
 import { jobStore } from "../src/store/jobs.ts";
-import { addAttachment, AttachmentError, removeAttachments } from "../src/server/guide.ts";
+import { addAttachment, AttachmentError, removeAttachments, switchGuideStyle } from "../src/server/guide.ts";
 
 const STAMPS = {
 	api: "faux",
@@ -297,5 +302,112 @@ describe("the guide prompt", () => {
 	it("the learner's typed problems work with no intake", () => {
 		const messages = [newUserMessage("Problem 1: show that …")];
 		assert.equal(problemSetOf(messages), null);
+	});
+});
+
+// ─── guide styles ───────────────────────────────────────────────────────────
+
+describe("guide styles", () => {
+	const ctxWith = (tree?: PlanTree) => {
+		const chat = { id: "chat_guide_styles", messages: [] as LhMessage[], kind: "guide", ...(tree ? { tree } : {}) };
+		return {
+			chatId: chat.id,
+			chatStore: { getChat: () => chat } as never,
+			jobStore: { findJobByToolCallId: () => null, createJob: () => ({ id: "j" }) } as never,
+			spawn: () => {},
+		};
+	};
+
+	it("the record defaults to coach; the store saves partner", () => {
+		const chat = chatStore.createChat("Test: guide style", "guide");
+		createdChats.push(chat.id);
+		assert.equal(guideStyleOf(chat), "coach");
+		chatStore.saveGuideStyle(chat.id, "partner");
+		assert.equal(guideStyleOf(chatStore.getChat(chat.id)!), "partner");
+	});
+
+	it("partner drops the check and card tools and adds mark_done", () => {
+		const coach = guideTools(ctxWith(TREE));
+		assert.ok(coach.problem && coach.conclude && (coach.quiz || coach.explain));
+		assert.equal(coach.mark_done, undefined);
+		const partner = guideTools(ctxWith(TREE), undefined, "partner");
+		for (const name of ["quiz", "explain", "problem", "conclude"]) assert.equal(partner[name], undefined, name);
+		for (const name of ["mark_done", "ask_user_question", "plan_init", "read", "pdf"]) assert.ok(partner[name], name);
+	});
+
+	it("mark_done validates the node against the map", async () => {
+		const refused = await guideTools(ctxWith(), undefined, "partner").mark_done!.execute("t1", { nodeId: "p1" });
+		assert.match(JSON.stringify(refused), /No plan map exists yet/);
+		const ok = await guideTools(ctxWith(TREE), undefined, "partner").mark_done!.execute("t2", { nodeId: "p1" });
+		assert.match(JSON.stringify(ok), /Marked p1 done/);
+	});
+
+	it("mark_done turns a node done (worked) in both folds; a refused call counts for nothing", () => {
+		const messages = [...call("call_m1", "mark_done", { nodeId: "p1" }), ...call("call_m2", "mark_done", { nodeId: "p2" }, true)];
+		const native = derivePlanStatusesLh(TREE, messages);
+		assert.equal(native.done.get("p1"), "worked");
+		assert.equal(derivedNodeStatus(native, "p1"), "done");
+		assert.equal(native.done.has("p2"), false);
+		const view = derivePlanStatuses(TREE, [
+			{ parts: [{ type: "tool-mark_done", state: "output-available", input: { nodeId: "p1" } }] },
+			{ parts: [{ type: "tool-mark_done", state: "output-error", input: { nodeId: "p2" } }] },
+		]);
+		assert.equal(view.done.get("p1"), "worked");
+		assert.equal(view.done.has("p2"), false);
+	});
+
+	it("the switch skips a waiting check, discards the active part, and lands the marker", () => {
+		const ask: LhMessage & AssistantMessage = {
+			id: "a_ask",
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call_ask", name: "ask_user_question", arguments: { question: "Which problems?" } as never }],
+			timestamp: 3,
+			...STAMPS,
+		};
+		const withCheck = [...pose("call_p1", "p1"), ask];
+		assert.ok(danglingQuestionOf(withCheck));
+		const appends = guideStyleSwitchAppends(record(withCheck), "partner");
+		const after = [...withCheck, ...appends];
+		assert.equal(danglingQuestionOf(after), null);
+		assert.equal(activeProblemOf(after), null);
+		const marker = appends.at(-1) as { customType?: string; content?: string; details?: unknown };
+		assert.equal(marker.customType, "guide-style");
+		assert.match(marker.content!, /\[STYLE: PARTNER\]/);
+		assert.equal(latestGuideStyle(after), "partner");
+		// The model reads the marker; the view renders a divider.
+		assert.ok(toLlmMessages(after).some((m) => JSON.stringify(m).includes("[STYLE: PARTNER]")));
+		assert.ok(projectView(after).some((m) => m.parts.some((p) => p.type === "data-guide-style")));
+		assert.throws(() => guideStyleSwitchAppends(record([], "practice"), "partner"));
+	});
+
+	it("switchGuideStyle saves the style once and refuses non-guides", () => {
+		const chat = chatStore.createChat("Test: guide switch", "guide");
+		createdChats.push(chat.id);
+		assert.deepEqual(switchGuideStyle(chat.id, "partner"), { changed: true });
+		assert.deepEqual(switchGuideStyle(chat.id, "partner"), { changed: false });
+		const saved = chatStore.getChat(chat.id)!;
+		assert.equal(guideStyleOf(saved), "partner");
+		assert.equal(saved.messages.filter((m) => (m as { customType?: string }).customType === "guide-style").length, 1);
+		const teach = chatStore.createChat("Test: not a guide");
+		createdChats.push(teach.id);
+		assert.throws(() => switchGuideStyle(teach.id, "partner"), AttachmentError);
+	});
+
+	it("each style composes its own prompt", () => {
+		const coach = composeInstructions("guide", undefined, "coach");
+		const partner = composeInstructions("guide", undefined, "partner");
+		assert.equal(composeInstructions("guide"), coach);
+		assert.match(coach, /Your style: check & coach/);
+		assert.doesNotMatch(coach, /Your style: working partner/);
+		assert.match(partner, /Your style: working partner/);
+		assert.doesNotMatch(partner, /Your style: check & coach/);
+		assert.match(partner, /The solution law/);
+		assert.doesNotMatch(partner, /## The question tools/);
+		assert.doesNotMatch(partner, /Principle i — Unconditional truths first/);
+	});
+
+	it("compaction names the style", () => {
+		const prompt = buildCompactionPrompt({ spanText: "…", planTreeText: null, kind: "guide", problemSetText: "THE PROBLEM SET", guideStyle: "partner" });
+		assert.match(prompt, /PARTNER style/);
 	});
 });
