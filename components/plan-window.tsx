@@ -59,6 +59,7 @@ export function PlanMarginalia({ messages, tree: override }: { messages: readonl
 			edges={tree.edges}
 			statusOf={statusOf}
 			glowId={statuses?.current ?? null}
+			outcomeOf={(id) => statuses?.done.get(id)}
 			markerId={markerId}
 			pad={MARGIN_PAD}
 			textCapScale={TEXT_CAP_SCALE}

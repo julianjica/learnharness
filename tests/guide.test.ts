@@ -35,6 +35,9 @@ import { dismissAppends, guideStyleSwitchAppends, inputAppends, parseDismissInpu
 import { danglingQuestionOf } from "../src/core/native-messages.ts";
 import { guideStyleOf } from "../src/core/contracts.ts";
 import { latestGuideStyle } from "../components/chat.tsx";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PlanDiagram } from "../components/plan-block.tsx";
 import { projectView } from "../src/core/view.ts";
 import { derivePlanStatuses, derivePlanStatusesLh, derivedNodeStatus, type PlanTree } from "../src/core/contracts/plan.ts";
 import { buildCompactionPrompt, problemSetOf } from "../src/core/compaction.ts";
@@ -404,6 +407,20 @@ describe("guide styles", () => {
 		assert.match(partner, /The solution law/);
 		assert.doesNotMatch(partner, /## The question tools/);
 		assert.doesNotMatch(partner, /Principle i — Unconditional truths first/);
+	});
+
+	it("a done node's outcome shows on hover", () => {
+		const html = renderToStaticMarkup(
+			createElement(PlanDiagram, {
+				nodes: TREE.nodes,
+				edges: TREE.edges,
+				statusOf: (id: string) => (id === "p1" ? "done" : "upcoming"),
+				outcomeOf: (id: string) => (id === "p1" ? "worked" : undefined),
+				markerId: "m",
+			}),
+		);
+		assert.match(html, /<title>Worked through<\/title>/);
+		assert.equal(html.match(/<title>/g)?.length, 1);
 	});
 
 	it("compaction names the style", () => {

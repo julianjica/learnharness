@@ -15,6 +15,7 @@ import { curveBasis, line } from "d3-shape";
 import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
 import type { PlanBlockData, PlanNodeStatus, PlanTree } from "@/src/core";
 import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
+import type { PlanProblemOutcome } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 
 /**
@@ -465,6 +466,14 @@ const TEXT: Record<PlanNodeStatus, string> = {
 // the composer/dock shells — but the outlines STAY white (owner
 // follow-up: the gray fill is good, white box edges).
 const MONO_BOX = "fill-card stroke-white";
+
+/** A guide's done-node outcome, shown on hover (owner, 2026-11-04). */
+export const PLAN_OUTCOME_LABEL: Record<PlanProblemOutcome, string> = {
+	solved: "Solved",
+	viewed: "Solution viewed",
+	ended: "Ended",
+	worked: "Worked through",
+};
 const MONO_TEXT = "fill-foreground text-xs";
 
 /** The diagram itself: positioned nodes + bezier edges. Pure-ish render —
@@ -485,6 +494,7 @@ export function PlanDiagram({
 	naturalSize,
 	monochrome,
 	fill,
+	outcomeOf,
 }: {
 	nodes: readonly LayoutNode[];
 	edges: ReadonlyArray<{ from: string; to: string }>;
@@ -511,6 +521,8 @@ export function PlanDiagram({
 	 *  dock band's marginalia mode, where the diagram must fit BOTH the
 	 *  flank's width and the band's height rather than run width-first. */
 	fill?: boolean;
+	/** A done node's outcome (guiding sessions): its hover label. */
+	outcomeOf?: (id: string) => PlanProblemOutcome | undefined;
 }) {
 	const layout = useMemo(() => blockLayout(nodes, edges), [nodes, edges]);
 	// Pad only the full-extent render — the plan window's override viewBox is
@@ -629,6 +641,7 @@ export function PlanDiagram({
 						data-testid={`plan-node-${n.id}`}
 						data-status={status}
 					>
+						{status === "done" && !monochrome && outcomeOf?.(n.id) && <title>{PLAN_OUTCOME_LABEL[outcomeOf(n.id)!]}</title>}
 						{/* Rectangular — no corner rounding (owner). */}
 						<rect
 							width={w}
@@ -957,6 +970,7 @@ export function PlanPopup({ messages, tree: override, onClose }: { messages: rea
 								edges={tree.edges}
 								statusOf={statusOf}
 								glowId={statuses?.current ?? null}
+								outcomeOf={(id) => statuses?.done.get(id)}
 								markerId={markerId}
 								pad={POPUP_PAD}
 								naturalSize
