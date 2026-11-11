@@ -31,6 +31,9 @@ import { batchRuns, coverageOf, messageViewLines } from "../../core/coverage.ts"
 import type { LhMessage } from "../../core/native-messages.ts";
 import { auditorGraphTools } from "../tools/graph.ts";
 import { runSubmitAgent, healStringifiedArrays } from "./submit-agent.ts";
+import type { GardenStore } from "../../core/ports.ts";
+import { gardenItemsOf, linkableItems } from "../../core/garden.ts";
+import { runGardenLinker } from "./garden-linker.ts";
 
 /**
  * The extraction pipeline (vision §1 construction, 2026-09-02 redesign;
@@ -611,7 +614,7 @@ function runAuditor(
  *  audit+merge critical section is queued behind another job's; the
  *  extractor is done but the auditor may not start until the graph is
  *  stable. */
-export type ExtractionPhase = "queued" | "extracting" | "waiting" | "auditing" | "merging";
+export type ExtractionPhase = "queued" | "extracting" | "waiting" | "auditing" | "merging" | "linking";
 
 /** One in-flight pipeline run. Module-level: one process, one registry.
  *  Exported for the status payload's consumer typing (the dock). */
@@ -732,6 +735,10 @@ export interface ExtractionPipelineDeps extends GraphDeps, ExtractionModels {
 	 *  callers wire the live effective settings (extraction-UX redesign,
 	 *  2026-09-24). */
 	getChunkTokens?: () => number;
+	/** The garden's link ledger (owner design, 2026-11-11): when present, a
+	 *  chat run ends with the linking step (garden-linker.ts). Absent (most
+	 *  tests) = no linking. */
+	gardenStore?: GardenStore;
 }
 
 export interface NotesImportInput {
@@ -765,6 +772,11 @@ export interface ExtractionPipeline {
 	 *  path, so re-importing the same file re-runs extraction against the
 	 *  same source identity (mappings dedupe by it). */
 	importNotes(input: NotesImportInput): Promise<EmissionStats>;
+	/** The garden's linking step alone (the backfill): link this chat's
+	 *  settled, already-extracted evidence items to its concepts. Resolves
+	 *  to the number of items linked; 0 when a run for the chat is already
+	 *  in flight or there is nothing to link. */
+	linkChat(chatId: string): Promise<number>;
 }
 
 /** pi's per-step usage, flattened to the persisted CallUsage fields
@@ -783,6 +795,9 @@ export function callUsage(usage: Usage): CallUsage {
 		reasoningTokens: usage.reasoning ?? 0,
 	};
 }
+
+/** Items per linker call (one submit each). */
+const GARDEN_LINK_BATCH = 25;
 
 export function createExtractionPipeline(deps: ExtractionPipelineDeps): ExtractionPipeline {
 	const { chatStore, graphStore } = deps;
@@ -1093,6 +1108,108 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 		return stats;
 	}
 
+	/** THE GARDEN LINKING STEP (owner design, 2026-11-11 — core/garden.ts):
+	 *  link this chat's settled evidence items that sit at or before its
+	 *  newest extracted message to the concepts the chat touched. A
+	 *  separate model call on the extractor's slot, after the merge — the
+	 *  extractor's own view stays teacher prose. Items are linked once; with
+	 *  no concepts at all they are recorded as linked to nothing (no call).
+	 *  Runs under the shared background semaphore, shows in the dock as the
+	 *  chat's "linking" row, aborts with the chat's extraction abort, and
+	 *  bills the chat's extractions log as a kind "link" run. */
+	async function linkSettled(chatId: string): Promise<number> {
+		const gardenStore = deps.gardenStore;
+		if (!gardenStore) return 0;
+		const record = chatStore.getChat(chatId);
+		if (!record || record.kind === "practice") return 0;
+		const items = gardenItemsOf(record);
+		if (items.length === 0) return 0;
+		const covered = coverageOf(record.messages, graphStore.readCoverage(), chatId);
+		const uncovered = new Set(covered.uncovered);
+		let lastCovered = -1;
+		covered.slots.forEach((slot, i) => {
+			if (messageViewLines(slot.message, slot.message.id).length > 0 && !uncovered.has(i)) lastCovered = i;
+		});
+		const linked = new Set(gardenStore.readLinks().filter((l) => l.chatId === chatId).map((l) => l.itemId));
+		const pending = linkableItems(items, lastCovered, linked);
+		if (pending.length === 0) return 0;
+		const concepts = getGraph(graphStore).nodes.filter((n) => n.provenance.some((p) => p.chatId === chatId));
+		if (concepts.length === 0) {
+			const linkedAt = new Date().toISOString();
+			gardenStore.appendLinks(pending.map((item) => ({ chatId, itemId: item.id, nodeIds: [], linkedAt })));
+			return pending.length;
+		}
+		const engine = stageEngine("extractor", deps.extractor);
+		if (!engine) return 0;
+		const jobKey = `${chatId}#link`;
+		const t0 = performance.now();
+		let total = 0;
+		setPhase(jobKey, "queued", "chat");
+		try {
+			for (let i = 0; i < pending.length; i += GARDEN_LINK_BATCH) {
+				const batch = pending.slice(i, i + GARDEN_LINK_BATCH);
+				const verdicts = await withExtractSlot(jobKey, async () => {
+					setPhase(jobKey, "linking", "chat");
+					return runGardenLinker({
+						engine,
+						chatId,
+						items: batch,
+						concepts,
+						signal: runningExtractions.get(jobKey)?.controller.signal,
+						onStep: (usage, model, step, finishReason, tools) => {
+							recordStep(jobKey, "extractor", callUsage(usage), model);
+							console.info(`[extraction ${chatId}] linker step ${step}: ${finishReason}, tools: ${tools}`);
+						},
+					});
+				});
+				if (!chatStore.getChat(chatId)) break; // deleted mid-run: write nothing
+				const linkedAt = new Date().toISOString();
+				gardenStore.appendLinks(verdicts.map((v) => ({ chatId, ...v, linkedAt })));
+				total += verdicts.length;
+			}
+			console.info(`[extraction ${chatId}] garden: linked ${total} item(s) in ${Math.round(performance.now() - t0)}ms`);
+			return total;
+		} finally {
+			persistLinkUsage(jobKey, chatId, Math.round(performance.now() - t0));
+			finishExtraction(jobKey);
+		}
+	}
+
+	/** The linking run's spend, on the chat's extractions log (kind "link":
+	 *  the cost fold counts it as extraction, with no audit stage). */
+	function persistLinkUsage(jobKey: string, chatId: string, durationMs: number): void {
+		const run = runningExtractions.get(jobKey);
+		const stage = run?.usage.extractor;
+		if (!run || !stage || stage.steps.length === 0 || !chatStore.getChat(chatId)) return;
+		chatStore.appendExtractionUsage(chatId, {
+			kind: "link",
+			startedAt: run.startedAt,
+			at: new Date().toISOString(),
+			durationMs,
+			stages: { extractor: stage, auditor: { model: stage.model, steps: [] } },
+		});
+	}
+
+	/** The linking step after a run — never fails the run it follows. */
+	async function linkAfterRun(chatId: string): Promise<void> {
+		try {
+			await linkSettled(chatId);
+		} catch (err) {
+			if (err instanceof Error && err.name === "AbortError") console.info(`[extraction ${chatId}] garden linking aborted`);
+			else console.error(`[extraction ${chatId}] garden linking failed:`, err);
+		}
+	}
+
+	async function linkChat(chatId: string): Promise<number> {
+		if (inFlight.has(chatId)) return 0;
+		inFlight.add(chatId);
+		try {
+			return await linkSettled(chatId);
+		} finally {
+			inFlight.delete(chatId);
+		}
+	}
+
 	async function runExtraction(chatId: string): Promise<EmissionStats> {
 		if (inFlight.has(chatId)) return { nodes: 0, chains: 0 };
 		inFlight.add(chatId);
@@ -1115,6 +1232,8 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 			const covered = coverageOf(record.messages, graphStore.readCoverage(), chatId);
 			if (covered.uncovered.length === 0) {
 				console.info(`[extraction ${chatId}] nothing uncovered — no-op`);
+				// Checks answered since the last run still get linked.
+				await linkAfterRun(chatId);
 				return { nodes: 0, chains: 0 };
 			}
 			const chunkTokens = deps.getChunkTokens?.() ?? FACTORY_SETTINGS.graph.extractionChunkTokens;
@@ -1215,6 +1334,7 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 				`[extraction ${chatId}] merged: ${stats.nodes} nodes, ${stats.chains ?? 0} chains ` +
 					`(${Math.round(performance.now() - t0)}ms total, ${batches.length} batch job(s))`,
 			);
+			await linkAfterRun(chatId);
 			return stats;
 		} catch (err) {
 			// Pre-fan-out failures only (stage gate, coverage read): aborts
@@ -1429,6 +1549,6 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 		}
 	}
 
-	return { runExtraction, importNotes };
+	return { runExtraction, importNotes, linkChat };
 }
 

@@ -115,6 +115,15 @@ export const GRAPH_FORMAT_FILE = path.join(PATHS.graph, "format.json");
 export const SETTINGS_FILE = path.join(DATA_ROOT, "settings.json");
 
 /**
+ * The garden (owner design, 2026-11-11 — contracts/garden.ts): the
+ * check→concept links the linking step writes after extraction (append-only
+ * JSONL), and the last-visit snapshot the page animates new growth from.
+ */
+export const GARDEN_DIR = path.join(DATA_ROOT, "garden");
+export const GARDEN_LINKS_FILE = path.join(GARDEN_DIR, "links.jsonl");
+export const GARDEN_VISIT_FILE = path.join(GARDEN_DIR, "visit.json");
+
+/**
  * The optional local theme (owner, 2026-11-01): a CSS file the user keeps
  * in their data dir — never in the repo — served by GET /api/theme.css and
  * linked from the root layout. Absent = an empty stylesheet. Lets a

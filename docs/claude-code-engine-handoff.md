@@ -156,3 +156,12 @@ distribute builds with it enabled.
 - Not yet live-checked on Claude Code / Codex. Include this case in the live check: flip
   coach→partner while a part is active. The next input then carries a synthetic `conclude`
   call, a tool the partner registry no longer declares (Claude Code `render.ts`, Codex reseed).
+
+## Update 2026-11-11: the garden
+
+- New `/garden` page (docs/architecture.md §7.2): one plant per graph concept, stages seed → sprout → leafy →
+  bloom from right checks and solved problems across all session kinds. Teach/guide evidence is linked to
+  concepts by a linking step that runs after each extraction run (extractor slot, `kind: "link"` usage);
+  practice problems use their own targets. New dependency: `lindsvg` (MIT) draws the plants.
+- Not yet live-checked: a real linking run on Claude Code / Codex (submit tool `submit_links`), and the
+  backfill over the owner's sessions (68 settled items were waiting on a copy of the data, 2026-11-11).

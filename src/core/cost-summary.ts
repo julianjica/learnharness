@@ -150,30 +150,35 @@ export function graphCostSummary(input: CostSummaryInput, price: CallPricer): Gr
 		else if (extDollars === null) extraction.unpricedRuns++;
 		else extraction.dollars += extDollars;
 
-		audit.runs++;
-		mergeTokens(audit.tokens, stages.auditor.steps);
-		const audDollars = stageDollars(stages.auditor.model, stages.auditor.steps, price);
-		if (isSubscriptionModel(stages.auditor.model)) {
-			audit.subscriptionRuns = (audit.subscriptionRuns ?? 0) + 1;
-			audit.subscriptionProviders = [...new Set([...(audit.subscriptionProviders ?? []), ...subscriptionLabels([stages.auditor.model])])];
+		// A garden linking run (kind "link") has no audit stage at all.
+		const linkRun = run.kind === "link";
+		const audDollars = linkRun ? null : stageDollars(stages.auditor.model, stages.auditor.steps, price);
+		if (!linkRun) {
+			audit.runs++;
+			mergeTokens(audit.tokens, stages.auditor.steps);
+			if (isSubscriptionModel(stages.auditor.model)) {
+				audit.subscriptionRuns = (audit.subscriptionRuns ?? 0) + 1;
+				audit.subscriptionProviders = [...new Set([...(audit.subscriptionProviders ?? []), ...subscriptionLabels([stages.auditor.model])])];
+			}
+			else if (audDollars === null) audit.unpricedRuns++;
+			else audit.dollars += audDollars;
 		}
-		else if (audDollars === null) audit.unpricedRuns++;
-		else audit.dollars += audDollars;
 
 		// Run-level: null only when EVERY stage is unpriced.
 		const allStages: Array<number | null> = [extDollars, audDollars];
 		const runDollars = allStages.every((d) => d === null)
 			? null
 			: allStages.reduce<number>((a, d) => a + (d ?? 0), 0);
-		const subscriptionRuns = [stages.extractor, stages.auditor].filter((stage) => isSubscriptionModel(stage.model)).length;
+		const runStages = linkRun ? [stages.extractor] : [stages.extractor, stages.auditor];
+		const subscriptionRuns = runStages.filter((stage) => isSubscriptionModel(stage.model)).length;
 		const allSteps = [...stages.extractor.steps, ...stages.auditor.steps];
 		runs.push({
-			...(subscriptionRuns ? { subscriptionRuns, subscriptionProviders: subscriptionLabels([stages.extractor.model, stages.auditor.model]) } : {}),
+			...(subscriptionRuns ? { subscriptionRuns, subscriptionProviders: subscriptionLabels(runStages.map((stage) => stage.model)) } : {}),
 			startedAt: run.startedAt,
 			at: run.at,
 			durationMs: run.durationMs,
 			kind: "extraction",
-			title,
+			title: linkRun ? `${title} · garden links` : title,
 			dollars: runDollars,
 			...(runEstimate === undefined ? {} : { estimate: runEstimate }),
 			tokens: sumSteps(allSteps),

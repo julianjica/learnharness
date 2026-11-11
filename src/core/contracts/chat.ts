@@ -132,6 +132,10 @@ export interface ExtractionStageUsage {
 export interface ExtractionRunUsage {
 	/** The run's registry startedAt (ms) — the idempotency key. */
 	startedAt: number;
+	/** "link" (garden, 2026-11-11): the linking step's own run — its spend
+	 *  rides stages.extractor (the linker uses the extractor's slot) and
+	 *  stages.auditor is empty. Absent = an extraction run. */
+	kind?: "link";
 	at: string;
 	durationMs: number;
 	/** What the run merged into the graph; absent when it failed first. */

@@ -24,8 +24,11 @@ import type { TurnUsage } from "@/src/core";
 export function Home({
 	initialConfigured,
 	rendering = true,
+	focusNodeId,
 }: {
 	initialConfigured: boolean;
+	/** The garden's deep link (/?node=<id>): the graph view selects it. */
+	focusNodeId?: string;
 	/** GRAPH RENDERING off (owner, 2026-10-06): the home's main view is
 	 * the chains view, not the canvas. Read server-side per navigation —
 	 * changing the setting applies on the next visit home. */
@@ -203,6 +206,7 @@ export function Home({
 						practiceSelection={pickedIds}
 						onPracticeSelectionChange={setPracticeProps}
 						onChainSelectClose={() => setChainSelectOpen(false)}
+						focusNodeId={focusNodeId}
 					/>
 				) : (
 					<MinimalHome

@@ -422,6 +422,14 @@ A third session kind, `kind: "guide"`: the learner brings a goal and a problem s
 
 ---
 
+## 7.2 The garden — growth from the learner's own evidence (owner design 2026-11-11)
+
+A page (`/garden`, the sprout in the sidebar header) where every knowledge-graph concept is a plant, grown only by what the learner did. Never shown inside a session; nothing is written into the graph.
+
+- **Stages** (`src/core/garden.ts` `stageOf`): seed = the concept exists; sprout = 1 right check; leafy = 3+ right checks, a problem solved with hints, or a partner-style problem worked through; bloom = a problem that used it, solved on the learner's own. Wrong answers, "I don't know", dismissals, moving on, surrendering and viewing a solution add nothing and take nothing away.
+- **Evidence.** Practice problems carry concept `target`s and are read straight off the record. Teach and guide evidence (right quiz/probe checks, answered explain/recall checks, guide parts solved, `mark_done` calls) is tied to concepts by the **linking step** (`src/agent/subagents/garden-linker.ts`): one submit call on the extractor's slot, run by the extraction pipeline right after each chat run (also when nothing was uncovered), never inside the extractor's prompt, so the extractor keeps its teacher-prose view. It reads the chat's settled items at or before its newest extracted message plus the concepts with provenance in that chat, and judges free-text answers against the committed answer. Each item is linked once (`data/garden/links.jsonl`; an empty list is final; no concepts = no call). It shows in the dock as the chat's "linking" row, aborts with the chat's extraction, and bills the chat's extractions log as a `kind: "link"` run that the cost fold keeps out of the audit stage. The backfill (`POST /api/garden/link`, the page's "Link past checks" button) runs the same step over every past session.
+- **The page** (`components/garden.tsx`, `components/garden-plant.ts`): one bed per birth source (session or notes file), oldest first; plants are lindsvg L-systems, species picked from the concept id, rewrites by stage (seed none, sprout 2, leafy 3, bloom 4), leaves at tips from leafy, flowers in bloom, inks from the `--lh-garden-*` tokens. `data/garden/visit.json` keeps each plant's stage at the last visit; what grew since then grows in (off under reduced motion) under a "Since your last visit" line. Hover shows the evidence; click opens `/?node=<id>`, which selects and centers the node in the graph view.
+
 ## 8. Process boundaries (the machine room)
 
 ```mermaid

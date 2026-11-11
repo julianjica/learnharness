@@ -82,3 +82,4 @@ export * from "./coverage.ts";
 export * from "./session-markdown.ts";
 // Asides (owner 2026-10-26): the side thread's anchor + delivery folds.
 export * from "./asides.ts";
+export * from "./garden.ts";

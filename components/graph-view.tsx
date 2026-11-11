@@ -963,7 +963,11 @@ export function GraphView({
 	practiceSelection,
 	onPracticeSelectionChange,
 	onChainSelectClose,
+	focusNodeId,
 }: {
+	/** The garden's deep link (/?node=<id>, 2026-11-11): select this node
+	 *  and center on it once the graph is drawn. */
+	focusNodeId?: string;
 	/** PRACTICE SELECT (owner vision, 2026-10-04): the LIFTED, persistent
 	 *  pick set — every check/clear in the chain table (however opened)
 	 *  reports the full node list up immediately; the composer-side chip
@@ -1436,6 +1440,20 @@ export function GraphView({
 			fontFamily: getComputedStyle(document.body).fontFamily,
 		});
 	}, [snapshot, isEmpty]);
+
+	// The deep link: once the data feed above has run, center the node and
+	// open its card — once per id (a later refetch never re-selects).
+	const focusedRef = useRef<string | null>(null);
+	useEffect(() => {
+		const renderer = rendererRef.current;
+		if (!focusNodeId || focusedRef.current === focusNodeId || !renderer || !snapshot) return;
+		const node = snapshot.nodes.find((n) => n.id === focusNodeId);
+		if (!node) return;
+		const anchor = renderer.focusNode(focusNodeId);
+		if (!anchor) return;
+		focusedRef.current = focusNodeId;
+		setSelected({ node, sourceIds: snapshot.nodeSessions[node.id] ?? [], anchor });
+	}, [focusNodeId, snapshot, isEmpty]);
 
 	// Feed #2 — settings: just marks the frame dirty. No rebuild, no
 	// re-layout, no camera touch (the whole point of the new renderer).

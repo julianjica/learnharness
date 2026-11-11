@@ -893,6 +893,23 @@ export class GraphCanvasRenderer {
 		if (w >= 10 && h >= 10) this.kFit = fitTransform(this.worldBBox, w, h, 40).k;
 	}
 
+	/** Center the camera on one node (zoom kept, never below the fit zoom)
+	 *  and return its screen position — the garden's deep link
+	 *  (/?node=<id>, 2026-11-11). Null when the node is unknown or the
+	 *  canvas has no size yet. */
+	focusNode(nodeId: string): Pt | null {
+		const node = this.nodeById.get(nodeId);
+		const w = this.canvas.clientWidth;
+		const h = this.canvas.clientHeight;
+		if (!node || w < 10 || h < 10) return null;
+		const k = Math.max(this.transform.k, this.kFit);
+		select(this.canvas).call(
+			this.zoomBehavior.transform,
+			zoomIdentity.translate(w / 2 - node.x * k, h / 2 - node.y * k).scale(k),
+		);
+		return { x: w / 2, y: h / 2 };
+	}
+
 	destroy(): void {
 		if (this.frameId !== null) cancelAnimationFrame(this.frameId);
 		if (this.commitTimer) clearTimeout(this.commitTimer);
