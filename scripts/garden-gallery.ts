@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/garden-gallery.ts <family|all> <out.png> [--light]
  *
- * <family> is a module in components/garden-species/ exporting SPECIES.
+ * <family> is a module in src/core/garden-species/ exporting SPECIES.
  * Writes <out>.html next to the PNG. Needs Google Chrome.
  */
 import { spawn } from "node:child_process";
@@ -12,14 +12,14 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { drawCell, type Species } from "../components/garden-species/kit";
+import { drawCell, type Species } from "../src/core/garden-species/kit";
 
 const STAGES = ["seed", "sprout", "leafy", "bloom"] as const;
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 async function load(family: string): Promise<readonly Species[]> {
-	if (family === "all") return (await import("../components/garden-species/index")).ALL_SPECIES;
-	const mod = await import(`../components/garden-species/${family}`);
+	if (family === "all") return (await import("../src/core/garden-species/index")).ALL_SPECIES;
+	const mod = await import(`../src/core/garden-species/${family}`);
 	return mod.SPECIES as Species[];
 }
 
@@ -62,7 +62,7 @@ async function main() {
 	const html = png.replace(/\.png$/, "") + ".html";
 	rmSync(png, { force: true });
 	writeFileSync(html, page(species, flag === "--light"));
-	await screenshot(html, png, 60 + species.length * 112);
+	await screenshot(html, png, 60 + species.length * 120);
 	console.log(`${species.length} species → ${png}`);
 }
 

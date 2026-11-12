@@ -162,7 +162,8 @@ distribute builds with it enabled.
 - New `/garden` page (docs/architecture.md §7.2): one plant per graph concept, stages seed → sprout → leafy →
   bloom from right checks and solved problems across all session kinds. Teach/guide evidence is linked to
   concepts by a linking step that runs after each extraction run (extractor slot, `kind: "link"` usage);
-  practice problems use their own targets. Plants: 200 hand-drawn species (`components/garden-species/`, 8 families
-  drawn in parallel by subagents on a shared kit); the first lindsvg L-system look was rejected by the owner and removed.
+  practice problems use their own targets. Plants: 1000 hand-drawn real species (`src/core/garden-species/`, 40
+  families of 25 drawn in parallel by subagents on a shared kit), drawn server-side and remembered per concept in
+  `data/garden/species.json`; the first lindsvg L-system look was rejected by the owner and removed.
 - Not yet live-checked: a real linking run on Claude Code / Codex (submit tool `submit_links`), and the
   backfill over the owner's sessions (68 settled items were waiting on a copy of the data, 2026-11-11).

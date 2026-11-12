@@ -31,7 +31,7 @@ import { createExtractionPipeline } from "../src/agent/subagents/extraction.ts";
 import { chatStore } from "../src/store/chats.ts";
 import { gardenStore } from "../src/store/garden.ts";
 import { Plant, growthLine, growthSince } from "../components/garden.tsx";
-import { ALL_SPECIES, speciesOf } from "../components/garden-species/index.ts";
+import { ALL_SPECIES, LEGACY_COUNT, pickSpecies, speciesById, speciesSvg } from "../src/core/garden-species/index.ts";
 
 // ─── record builders ─────────────────────────────────────────────────────────
 
@@ -289,6 +289,8 @@ function memoryGarden(): GardenStore & { links: GardenLink[] } {
 		readLinks: () => links.map((l) => ({ ...l })),
 		readVisit: () => null,
 		writeVisit: () => {},
+		readSpecies: () => null,
+		writeSpecies: () => {},
 	};
 }
 
@@ -384,12 +386,15 @@ describe("garden linking step", () => {
 // ─── store, page helpers, render ─────────────────────────────────────────────
 
 describe("garden store and page", () => {
-	it("round-trips links and the visit snapshot", () => {
+	it("round-trips links, the visit snapshot, and the species picks", () => {
 		const link: GardenLink = { chatId: "c", itemId: "i", nodeIds: ["n"], verdict: "right", linkedAt: "t" };
 		gardenStore.appendLinks([link]);
 		assert.deepEqual(gardenStore.readLinks().at(-1), link);
 		gardenStore.writeVisit({ visitedAt: "t", stages: { n: "leafy", bad: "tree" as never } });
 		assert.deepEqual(gardenStore.readVisit(), { visitedAt: "t", stages: { n: "leafy" } });
+		assert.equal(gardenStore.readSpecies(), null);
+		gardenStore.writeSpecies({ n: "rose" });
+		assert.deepEqual(gardenStore.readSpecies(), { n: "rose" });
 	});
 
 	it("counts what grew since the last visit", () => {
@@ -411,29 +416,52 @@ describe("garden store and page", () => {
 		assert.equal(growthLine(new Map()), null);
 	});
 
-	it("has 200 distinct species, each drawing clean, deterministic markup at every stage", () => {
-		assert.equal(ALL_SPECIES.length, 200);
-		assert.equal(new Set(ALL_SPECIES.map((s) => s.id)).size, 200);
-		assert.equal(new Set(ALL_SPECIES.map((s) => s.name)).size, 200);
+	it("has 1000 distinct species, each drawing clean, deterministic markup at every stage", () => {
+		assert.equal(ALL_SPECIES.length, 1000);
+		assert.equal(new Set(ALL_SPECIES.map((s) => s.id)).size, 1000);
+		assert.equal(new Set(ALL_SPECIES.map((s) => s.name.toLowerCase())).size, 1000);
 		for (const species of ALL_SPECIES) {
+			assert.match(species.id, /^[a-z0-9]+(-[a-z0-9]+)*$/);
 			for (const stage of ["sprout", "leafy", "bloom"] as const) {
 				const markup = species.draw(stage);
 				assert.ok(markup.length > 0, `${species.id} ${stage}`);
 				// Many plants share a page: no ids or defs; no broken numbers.
-				assert.ok(!/NaN|undefined|Infinity|<defs|<text|\sid="/.test(markup), `${species.id} ${stage}`);
+				assert.ok(!/NaN|undefined|Infinity|<defs|<text|<script|\son[a-z]+=|\sid="/.test(markup), `${species.id} ${stage}`);
 				assert.equal(species.draw(stage), markup, `${species.id} ${stage} is deterministic`);
 			}
 		}
 	});
 
-	it("grows a concept as one fixed species; the plant rises from the soil only when it grew", () => {
-		assert.equal(speciesOf("n_render").id, speciesOf("n_render").id);
-		assert.ok(new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => speciesOf(id).id)).size > 1);
-		const render = (stage: "seed" | "sprout" | "leafy" | "bloom", grow = false) =>
-			renderToStaticMarkup(createElement(Plant, { plant: { nodeId: "n_render", stage }, grow }));
-		assert.ok(render("seed").includes("<ellipse") && render("seed") !== render("bloom"));
+	it("picks a species once per concept, prefers unused ones, and keeps saved picks", () => {
+		const ids = Array.from({ length: 300 }, (_, i) => `n_${i}`);
+		const first = pickSpecies(ids, {});
+		assert.equal(first.changed, true);
+		assert.equal(new Set(Object.values(first.picks)).size, 300); // no repeats while unused species remain
+		// Saved picks never move, even when the node list or catalogue order would suggest otherwise.
+		const again = pickSpecies([...ids].reverse(), first.picks);
+		assert.equal(again.changed, false);
+		assert.deepEqual(again.picks, first.picks);
+		// A pick whose species no longer exists is repicked; the rest stay.
+		const stale = pickSpecies(["n_0", "n_1"], { n_0: "no-such-plant", n_1: first.picks.n_1! });
+		assert.equal(stale.changed, true);
+		assert.ok(speciesById(stale.picks.n_0!));
+		assert.equal(stale.picks.n_1, first.picks.n_1);
+		// First run ever (nothing saved): a concept keeps a batch-1 plant when it is free.
+		const migrated = pickSpecies(["n_render"], null);
+		assert.equal(migrated.changed, true);
+		assert.ok(ALL_SPECIES.slice(0, LEGACY_COUNT).some((s) => s.id === migrated.picks.n_render));
+	});
+
+	it("draws the plant's art over the soil; only a grown plant rises", () => {
+		const species = ALL_SPECIES[0]!;
+		const render = (stage: "seed" | "bloom", grow = false) =>
+			renderToStaticMarkup(createElement(Plant, { plant: { stage, art: { speciesId: species.id, speciesName: species.name, svg: speciesSvg(species, stage) } }, grow }));
+		assert.ok(render("seed") !== render("bloom"));
+		assert.ok(render("bloom").includes(species.draw("bloom")));
 		assert.ok(!render("bloom").includes("lh-garden-grow"));
 		assert.ok(render("bloom", true).includes("lh-garden-grow"));
+		assert.ok(renderToStaticMarkup(createElement(Plant, { plant: { stage: "seed" }, grow: false })).includes("<ellipse"));
 	});
+
 
 });

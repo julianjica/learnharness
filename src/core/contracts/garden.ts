@@ -47,11 +47,24 @@ export interface GardenEvidence {
 	worked: number;
 }
 
+/** What a plant looks like (owner design, 2026-11-11): its species — picked
+ *  once per concept and remembered (data/garden/species.json) — and that
+ *  species' drawing at the plant's stage. Drawn on the server
+ *  (core/garden-species/), so the browser ships no species. */
+export interface GardenArt {
+	speciesId: string;
+	speciesName: string;
+	/** SVG markup for an 80×96 cell, ground at y=88; the soil is the page's. */
+	svg: string;
+}
+
 export interface GardenPlant {
 	nodeId: string;
 	name: string;
 	stage: GardenStage;
 	evidence: GardenEvidence;
+	/** Set by the server view (GET /api/garden); absent in pure derivations. */
+	art?: GardenArt;
 }
 
 /** One bed: the concepts born in one session (or one imported notes file). */

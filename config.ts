@@ -122,6 +122,7 @@ export const SETTINGS_FILE = path.join(DATA_ROOT, "settings.json");
 export const GARDEN_DIR = path.join(DATA_ROOT, "garden");
 export const GARDEN_LINKS_FILE = path.join(GARDEN_DIR, "links.jsonl");
 export const GARDEN_VISIT_FILE = path.join(GARDEN_DIR, "visit.json");
+export const GARDEN_SPECIES_FILE = path.join(GARDEN_DIR, "species.json");
 
 /**
  * The optional local theme (owner, 2026-11-01): a CSS file the user keeps

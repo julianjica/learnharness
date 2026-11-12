@@ -9,7 +9,7 @@
  * plants share one page). A cut-out (split leaf, hole) is painted in CUT,
  * the bed's background colour.
  */
-import type { GardenStage } from "@/src/core";
+import type { GardenStage } from "../contracts/garden.ts";
 
 export type GrowingStage = Exclude<GardenStage, "seed">;
 

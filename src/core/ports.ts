@@ -179,14 +179,18 @@ export interface JobStore {
  * the callers. (The legacy default-settings.json fold died with the chat
  * section — per-session models, owner 2026-09-28.)
  */
-/** The garden's two files (data/garden — contracts/garden.ts): the
- *  append-only link ledger and the last-visit snapshot. */
+/** The garden's files (data/garden — contracts/garden.ts): the
+ *  append-only link ledger, the last-visit snapshot, and the remembered
+ *  species picks. */
 export interface GardenStore {
 	appendLinks(links: readonly GardenLink[]): void;
 	/** Raw link lines in append order (a later line for an item wins). */
 	readLinks(): GardenLink[];
 	readVisit(): GardenVisit | null;
 	writeVisit(visit: GardenVisit): void;
+	/** Concept id → species id; null before the first pick was ever saved. */
+	readSpecies(): Record<string, string> | null;
+	writeSpecies(picks: Record<string, string>): void;
 }
 
 export interface SettingsStore {

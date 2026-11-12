@@ -2,8 +2,8 @@
 
 /**
  * The garden page (owner design, 2026-11-11 — src/core/contracts/garden.ts):
- * one bed per birth session, one plant per concept (one of 200 drawn
- * species, picked by the concept id), grown only by
+ * one bed per birth session, one plant per concept (one of 1000 drawn
+ * species, picked once and remembered; drawn by the server), grown only by
  * the learner's own evidence. Plants that moved up a stage since the last
  * visit rise from the soil (≈1.2 s; none under reduced motion) under a
  * one-line "since your last visit" summary. Hover → name, stage, what grew
@@ -15,8 +15,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/top-bar";
 import { useServerEvent, useServerResync } from "@/components/server-events";
-import { plantMarkup, speciesOf } from "@/components/garden-species";
-import { CELL, soil } from "@/components/garden-species/kit";
 import { stageRank, type GardenBed, type GardenPayload, type GardenPlant, type GardenStage } from "@/src/core";
 
 const STAGE_LABEL: Record<GardenStage, string> = { seed: "Seed", sprout: "Sprout", leafy: "Leafy", bloom: "Bloom" };
@@ -62,15 +60,15 @@ function evidenceLines(plant: GardenPlant): string[] {
 	return lines;
 }
 
-const SOIL = soil();
-
-/** One plant in its cell. `grow` animates it rising from the soil. */
-export function Plant({ plant, grow }: { plant: Pick<GardenPlant, "nodeId" | "stage">; grow: boolean }) {
+/** One plant in its 80×96 cell (ground at y=88). The soil stays put; the
+ *  plant — server-drawn markup of our own species, never user input — rises
+ *  from it when `grow`. */
+export function Plant({ plant, grow }: { plant: Pick<GardenPlant, "stage" | "art">; grow: boolean }) {
 	return (
-		<svg viewBox={`0 0 ${CELL.width} ${CELL.height}`} width={CELL.width} height={CELL.height} aria-hidden className="block">
-			{/* Our own static drawings (components/garden-species/), never user input. */}
-			<g dangerouslySetInnerHTML={{ __html: SOIL }} />
-			<g className={grow ? "lh-garden-grow" : undefined} dangerouslySetInnerHTML={{ __html: plantMarkup(plant.nodeId, plant.stage) }} />
+		<svg viewBox="0 0 80 96" width={80} height={96} aria-hidden className="block">
+			<ellipse cx={40} cy={89} rx={20} ry={5} fill="#7a5a3e" />
+			<ellipse cx={40} cy={87.6} rx={17} ry={3} fill="#94704f" />
+			{plant.art ? <g className={grow ? "lh-garden-grow" : undefined} dangerouslySetInnerHTML={{ __html: plant.art.svg }} /> : null}
 		</svg>
 	);
 }
@@ -203,7 +201,7 @@ export function GardenView({ initial }: { initial?: GardenPayload }) {
 						{evidenceLines(hover.plant).map((l) => (
 							<div key={l}>{l}</div>
 						))}
-						<div className="mt-1 text-muted-foreground">growing as: {speciesOf(hover.plant.nodeId).name}</div>
+						{hover.plant.art ? <div className="mt-1 text-muted-foreground">growing as: {hover.plant.art.speciesName}</div> : null}
 					</div>
 				) : null}
 			</div>
