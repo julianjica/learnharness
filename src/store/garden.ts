@@ -1,11 +1,12 @@
 /**
  * The garden's fs adapter (core/ports.ts GardenStore): data/garden/links.jsonl
- * (append-only, one GardenLink per line) and data/garden/visit.json (the
- * last-visit snapshot, read-modify-write). Persistence and nothing else.
+ * (append-only, one GardenLink per line), data/garden/visit.json (the
+ * last-visit snapshot, read-modify-write) and data/garden/species.json (the
+ * remembered species picks). Persistence and nothing else.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { GARDEN_LINKS_FILE, GARDEN_VISIT_FILE } from "../../config.ts";
+import { GARDEN_LINKS_FILE, GARDEN_SPECIES_FILE, GARDEN_VISIT_FILE } from "../../config.ts";
 import type { GardenLink, GardenStage, GardenVisit } from "../core/contracts/garden.ts";
 import { GARDEN_STAGES } from "../core/contracts/garden.ts";
 import type { GardenStore } from "../core/ports.ts";
@@ -63,5 +64,20 @@ export const gardenStore: GardenStore = {
 	writeVisit(visit: GardenVisit) {
 		fs.mkdirSync(path.dirname(GARDEN_VISIT_FILE), { recursive: true });
 		fs.writeFileSync(GARDEN_VISIT_FILE, JSON.stringify(visit), "utf-8");
+	},
+	readSpecies() {
+		try {
+			const parsed: unknown = JSON.parse(fs.readFileSync(GARDEN_SPECIES_FILE, "utf-8"));
+			if (!isRecord(parsed)) return null;
+			const picks: Record<string, string> = {};
+			for (const [nodeId, speciesId] of Object.entries(parsed)) if (isString(speciesId)) picks[nodeId] = speciesId;
+			return picks;
+		} catch {
+			return null;
+		}
+	},
+	writeSpecies(picks) {
+		fs.mkdirSync(path.dirname(GARDEN_SPECIES_FILE), { recursive: true });
+		fs.writeFileSync(GARDEN_SPECIES_FILE, JSON.stringify(picks), "utf-8");
 	},
 };

@@ -1,15 +1,17 @@
 /**
  * The garden's server entry (owner design, 2026-11-11 — contracts/garden.ts):
- * a pure read over the graph, the chat records, and the link ledger; the
- * visit snapshot; and the backfill that runs the linking step over every
- * past teach/guide session.
+ * a read over the graph, the chat records, and the link ledger, with each
+ * plant drawn as its remembered species (picked on first sight); the visit
+ * snapshot; and the backfill that runs the linking step over every past
+ * teach/guide session.
  */
 import { coverageOf, messageViewLines } from "../core/coverage.ts";
 import { emit } from "../core/events.ts";
 import { deriveGarden, gardenEvidence, gardenItemsOf, gardenStages, linkableItems } from "../core/garden.ts";
 import { getGraph } from "../core/graph.ts";
 import type { ChatRecord } from "../core/contracts/chat.ts";
-import type { GardenPayload } from "../core/contracts/garden.ts";
+import type { GardenBed, GardenPayload } from "../core/contracts/garden.ts";
+import { pickSpecies, speciesById, speciesSvg } from "../core/garden-species/index.ts";
 import { extractionStatuses } from "../agent/subagents/extraction.ts";
 import { extraction } from "./chat-handler.ts";
 import { stores } from "./stores.ts";
@@ -55,6 +57,21 @@ function linkedIdsByChat(): Map<string, Set<string>> {
 	return out;
 }
 
+/** Draw every plant as its species, picking (and saving) one for any
+ *  concept that has none yet. */
+function drawBeds(beds: GardenBed[]): GardenBed[] {
+	const nodeIds = beds.flatMap((bed) => bed.plants.map((plant) => plant.nodeId));
+	const { picks, changed } = pickSpecies(nodeIds, stores.gardenStore.readSpecies());
+	if (changed) stores.gardenStore.writeSpecies(picks);
+	return beds.map((bed) => ({
+		...bed,
+		plants: bed.plants.map((plant) => {
+			const species = speciesById(picks[plant.nodeId]!)!;
+			return { ...plant, art: { speciesId: species.id, speciesName: species.name, svg: speciesSvg(species, plant.stage) } };
+		}),
+	}));
+}
+
 /** GET /api/garden. */
 export function gardenView(): GardenPayload {
 	const graph = getGraph(stores.graphStore);
@@ -65,7 +82,7 @@ export function gardenView(): GardenPayload {
 	for (const chat of chats) sessions[chat.id] = chat.title ?? chat.id;
 	const fileSources: Record<string, string> = {};
 	for (const source of stores.graphStore.readSources()) fileSources[source.id] = source.filePath;
-	const beds = deriveGarden(graph.nodes, evidence, { sessions, fileSources });
+	const beds = drawBeds(deriveGarden(graph.nodes, evidence, { sessions, fileSources }));
 	const coverage = stores.graphStore.readCoverage();
 	const linked = linkedIdsByChat();
 	const unlinked = chats.reduce((sum, chat) => sum + unlinkedCount(chat, coverage, linked.get(chat.id) ?? new Set()), 0);
