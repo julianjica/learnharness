@@ -600,43 +600,27 @@ body {
 }
 
 /* ─── The garden (owner design, 2026-11-11 — components/garden.tsx) ─────────
-   Plant inks: soft naturals that read on the dark surfaces. A local theme
-   (data/theme.css) can override any of them. */
+   Plants carry their own flat colours (components/garden-species/); the
+   only token is the bed's background, which cut-outs (split leaves, holes)
+   are painted in. It matches the bed's bg-card/40 over the page. */
 :root {
-	--lh-garden-soil: color-mix(in oklab, var(--border) 70%, transparent);
-	--lh-garden-seed: #b59a74;
-	--lh-garden-stem: #8a9a6e;
-	--lh-garden-leaf: #8fbf7f;
-	--lh-garden-flower-1: #f0a6ca;
-	--lh-garden-flower-2: #f4d58d;
-	--lh-garden-flower-3: #b8a6f0;
-	--lh-garden-flower-4: #f2a38a;
-	--lh-garden-flower-heart: #f7e9b0;
+	--lh-garden-cut: color-mix(in oklab, var(--card) 40%, var(--background));
 }
 
-/* Grow-in: stems draw from the root (pathLength=1), leaves, flowers and
-   seeds scale up from their anchor. Off under reduced motion. */
-@keyframes lh-garden-draw {
-	from { stroke-dashoffset: 1; }
-	to { stroke-dashoffset: 0; }
-}
+/* Grow-in: a plant that moved up a stage rises from the soil (the root at
+   40,88 of its 80×96 cell). Off under reduced motion. */
 @keyframes lh-garden-grow {
-	from { transform: scale(0); opacity: 0; }
-	to { transform: scale(1); opacity: 1; }
-}
-.lh-garden-draw {
-	stroke-dasharray: 1;
-	stroke-dashoffset: 1;
-	animation: lh-garden-draw 0.9s ease-out forwards;
+	from { transform: scale(0.3, 0); opacity: 0; }
+	60% { opacity: 1; }
+	to { transform: scale(1, 1); opacity: 1; }
 }
 .lh-garden-grow {
 	transform-box: view-box;
-	animation: lh-garden-grow 0.5s ease-out both;
+	transform-origin: 40px 88px;
+	animation: lh-garden-grow 1.2s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 @media (prefers-reduced-motion: reduce) {
-	.lh-garden-draw,
 	.lh-garden-grow {
 		animation: none;
-		stroke-dashoffset: 0;
 	}
 }

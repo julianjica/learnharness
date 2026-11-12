@@ -31,6 +31,7 @@ import { createExtractionPipeline } from "../src/agent/subagents/extraction.ts";
 import { chatStore } from "../src/store/chats.ts";
 import { gardenStore } from "../src/store/garden.ts";
 import { Plant, growthLine, growthSince } from "../components/garden.tsx";
+import { ALL_SPECIES, speciesOf } from "../components/garden-species/index.ts";
 
 // ─── record builders ─────────────────────────────────────────────────────────
 
@@ -410,19 +411,29 @@ describe("garden store and page", () => {
 		assert.equal(growthLine(new Map()), null);
 	});
 
-	it("draws bigger plants at later stages, leaves from leafy, flowers only in bloom", () => {
-		const render = (stage: "seed" | "sprout" | "leafy" | "bloom") =>
-			renderToStaticMarkup(createElement(Plant, { plant: { nodeId: "n_render", stage }, grow: false }));
-		const seed = render("seed");
-		const sprout = render("sprout");
-		const leafy = render("leafy");
-		const bloom = render("bloom");
-		assert.ok(!seed.includes("<path"));
-		assert.ok(sprout.includes("<path") && !sprout.includes("--lh-garden-leaf"));
-		assert.ok(leafy.includes("--lh-garden-leaf") && !leafy.includes("--lh-garden-flower-heart"));
-		assert.ok(bloom.includes("--lh-garden-flower-heart"));
-		const pathChars = (svg: string) => [...svg.matchAll(/ d="([^"]*)"/g)].reduce((n, m) => n + m[1]!.length, 0);
-		assert.ok(pathChars(sprout) < pathChars(leafy) && pathChars(leafy) < pathChars(bloom));
-		assert.ok(render("leafy").includes("lh-garden") && renderToStaticMarkup(createElement(Plant, { plant: { nodeId: "n_render", stage: "sprout" }, grow: true })).includes("lh-garden-draw"));
+	it("has 200 distinct species, each drawing clean, deterministic markup at every stage", () => {
+		assert.equal(ALL_SPECIES.length, 200);
+		assert.equal(new Set(ALL_SPECIES.map((s) => s.id)).size, 200);
+		assert.equal(new Set(ALL_SPECIES.map((s) => s.name)).size, 200);
+		for (const species of ALL_SPECIES) {
+			for (const stage of ["sprout", "leafy", "bloom"] as const) {
+				const markup = species.draw(stage);
+				assert.ok(markup.length > 0, `${species.id} ${stage}`);
+				// Many plants share a page: no ids or defs; no broken numbers.
+				assert.ok(!/NaN|undefined|Infinity|<defs|<text|\sid="/.test(markup), `${species.id} ${stage}`);
+				assert.equal(species.draw(stage), markup, `${species.id} ${stage} is deterministic`);
+			}
+		}
 	});
+
+	it("grows a concept as one fixed species; the plant rises from the soil only when it grew", () => {
+		assert.equal(speciesOf("n_render").id, speciesOf("n_render").id);
+		assert.ok(new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => speciesOf(id).id)).size > 1);
+		const render = (stage: "seed" | "sprout" | "leafy" | "bloom", grow = false) =>
+			renderToStaticMarkup(createElement(Plant, { plant: { nodeId: "n_render", stage }, grow }));
+		assert.ok(render("seed").includes("<ellipse") && render("seed") !== render("bloom"));
+		assert.ok(!render("bloom").includes("lh-garden-grow"));
+		assert.ok(render("bloom", true).includes("lh-garden-grow"));
+	});
+
 });

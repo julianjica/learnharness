@@ -2,10 +2,12 @@
 
 /**
  * The garden page (owner design, 2026-11-11 — src/core/contracts/garden.ts):
- * one bed per birth session, one L-system plant per concept, grown only by
+ * one bed per birth session, one plant per concept (one of 200 drawn
+ * species, picked by the concept id), grown only by
  * the learner's own evidence. Plants that moved up a stage since the last
- * visit grow in (≈1.5 s; none under reduced motion) under a one-line
- * "since your last visit" summary. Hover → name, stage, what grew it;
+ * visit rise from the soil (≈1.2 s; none under reduced motion) under a
+ * one-line "since your last visit" summary. Hover → name, stage, what grew
+ * it, the species it grows as;
  * click → the concept selected in the graph view (/?node=<id>). Never shown
  * inside a session.
  */
@@ -13,7 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/top-bar";
 import { useServerEvent, useServerResync } from "@/components/server-events";
-import { PLANT_BOX, plantGeometry } from "@/components/garden-plant";
+import { plantMarkup, speciesOf } from "@/components/garden-species";
+import { CELL, soil } from "@/components/garden-species/kit";
 import { stageRank, type GardenBed, type GardenPayload, type GardenPlant, type GardenStage } from "@/src/core";
 
 const STAGE_LABEL: Record<GardenStage, string> = { seed: "Seed", sprout: "Sprout", leafy: "Leafy", bloom: "Bloom" };
@@ -59,83 +62,15 @@ function evidenceLines(plant: GardenPlant): string[] {
 	return lines;
 }
 
-/** One plant in its cell. `grow` animates it in from nothing. */
+const SOIL = soil();
+
+/** One plant in its cell. `grow` animates it rising from the soil. */
 export function Plant({ plant, grow }: { plant: Pick<GardenPlant, "nodeId" | "stage">; grow: boolean }) {
-	const g = plantGeometry(plant.nodeId, plant.stage);
-	const leafy = plant.stage === "leafy" || plant.stage === "bloom";
-	// Airy, not a hedge: at most ~22 leaves, sampled evenly over the tips.
-	const leafStep = Math.max(1, Math.ceil(g.tips.length / 22));
-	const flowers = plant.stage === "bloom" ? g.tips.filter((_, i) => i % Math.max(1, Math.round(g.tips.length / 7)) === 0) : [];
-	const anim = grow ? " lh-garden-grow" : "";
 	return (
-		<svg
-			viewBox={`0 0 ${PLANT_BOX.width} ${PLANT_BOX.height}`}
-			width={PLANT_BOX.width}
-			height={PLANT_BOX.height}
-			aria-hidden
-			className="block overflow-visible"
-		>
-			<ellipse cx={PLANT_BOX.width / 2} cy={PLANT_BOX.ground + 1.5} rx={plant.stage === "seed" ? 9 : 14} ry={3} className="fill-[var(--lh-garden-soil)]" />
-			{plant.stage === "seed" ? (
-				<ellipse
-					cx={PLANT_BOX.width / 2}
-					cy={PLANT_BOX.ground - 2}
-					rx={2.6}
-					ry={1.8}
-					className={`fill-[var(--lh-garden-seed)]${anim}`}
-					style={{ transformOrigin: `${PLANT_BOX.width / 2}px ${PLANT_BOX.ground}px` }}
-				/>
-			) : null}
-			{g.stems.map((d, level) => (
-				<path
-					key={level}
-					d={d}
-					pathLength={1}
-					fill="none"
-					strokeLinecap="round"
-					strokeWidth={Math.max(0.6, 1.8 - level * 0.35)}
-					className={`stroke-[var(--lh-garden-stem)]${grow ? " lh-garden-draw" : ""}`}
-					style={grow ? { animationDelay: `${level * 0.25}s` } : undefined}
-				/>
-			))}
-			{leafy
-				? g.tips.map((t, i) => i % leafStep !== 0 ? null : (
-						<g
-							key={`l${i}`}
-							className={grow ? "lh-garden-grow" : undefined}
-							style={grow ? { transformOrigin: `${t.x}px ${t.y}px`, animationDelay: "0.9s" } : undefined}
-						>
-							{/* The tilt stays an attribute on the leaf; the grow-in scales the
-							    wrapper (a CSS origin on the rotated leaf would shift it). */}
-							<ellipse
-								cx={t.x}
-								cy={t.y}
-								rx={2.4}
-								ry={1.1}
-								transform={`rotate(${g.tilt[i] ?? 0} ${t.x} ${t.y})`}
-								className="fill-[var(--lh-garden-leaf)]"
-							/>
-						</g>
-					))
-				: null}
-			{flowers.map((t, i) => (
-				<g
-					key={`f${i}`}
-					className={grow ? "lh-garden-grow" : undefined}
-					style={{ transformOrigin: `${t.x}px ${t.y}px`, ...(grow ? { animationDelay: "1.2s" } : {}) }}
-				>
-					{[0, 72, 144, 216, 288].map((a) => (
-						<circle
-							key={a}
-							cx={t.x + 1.9 * Math.cos((a * Math.PI) / 180)}
-							cy={t.y + 1.9 * Math.sin((a * Math.PI) / 180)}
-							r={1.5}
-							style={{ fill: `var(--lh-garden-flower-${g.flowerHue + 1})` }}
-						/>
-					))}
-					<circle cx={t.x} cy={t.y} r={1} className="fill-[var(--lh-garden-flower-heart)]" />
-				</g>
-			))}
+		<svg viewBox={`0 0 ${CELL.width} ${CELL.height}`} width={CELL.width} height={CELL.height} aria-hidden className="block">
+			{/* Our own static drawings (components/garden-species/), never user input. */}
+			<g dangerouslySetInnerHTML={{ __html: SOIL }} />
+			<g className={grow ? "lh-garden-grow" : undefined} dangerouslySetInnerHTML={{ __html: plantMarkup(plant.nodeId, plant.stage) }} />
 		</svg>
 	);
 }
@@ -268,6 +203,7 @@ export function GardenView({ initial }: { initial?: GardenPayload }) {
 						{evidenceLines(hover.plant).map((l) => (
 							<div key={l}>{l}</div>
 						))}
+						<div className="mt-1 text-muted-foreground">growing as: {speciesOf(hover.plant.nodeId).name}</div>
 					</div>
 				) : null}
 			</div>
